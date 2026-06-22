@@ -1,0 +1,6 @@
+{
+  "name": "Surjomukhi",
+  "description": "Real-time Dual Device Status Sync App with live control, widgets, and conditional vibration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

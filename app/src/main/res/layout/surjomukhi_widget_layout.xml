@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg_3d"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <!-- Row 1: Header + Modernized Ping Button -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp">
+
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:text="🌻 সূর্যমুখী (Surjomukhi)"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_ping_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:background="@drawable/widget_button_3d"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="5dp"
+            android:text="🔔 PING"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </RelativeLayout>
+
+    <!-- Row 2: Quick Status Change Buttons (Horizontally positioned on Second Line) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:weightSum="4"
+        android:gravity="center"
+        android:layout_marginBottom="10dp">
+
+        <TextView
+            android:id="@+id/btn_status_free"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/widget_status_free_3d"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="ফ্রি 🟢"
+            android:textColor="#00FF88"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btn_status_focus"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/widget_status_study_3d"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="পড়া 🟡"
+            android:textColor="#FFD700"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btn_status_sleep"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/widget_status_sleep_3d"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="ঘুম 🔵"
+            android:textColor="#3B82F6"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btn_status_busy"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_status_busy_3d"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="ব্যস্ত 🔴"
+            android:textColor="#EF4444"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Row 3: Larger Partner Status Panel & Vibe-matching 3D Avatar (Highly Interactive) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/widget_partner_card_3d"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="12dp">
+
+        <!-- Status metrics column -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1.3"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_label_other"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="রিমোট নোড স্ট্যাটাস: "
+                android:textColor="#A0A0C5"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_other_status_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Free (Available) 🟢"
+                android:textColor="#00FF88"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_other_desc"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="সে ফোনে টাচ করার জন্য সম্পূর্ণ প্রস্তুত!"
+                android:textColor="#80809C"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <!-- Big 3D Vibe Avatar displaying dynamically based on state -->
+        <TextView
+            android:id="@+id/widget_partner_avatar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:layout_gravity="center"
+            android:paddingHorizontal="6dp"
+            android:text="😎"
+            android:textSize="36sp" />
+
+    </LinearLayout>
+
+</LinearLayout>
