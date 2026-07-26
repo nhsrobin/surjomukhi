@@ -1,3 +1,7 @@
+import java.io.File
+import java.net.URL
+import java.net.URI
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -11,7 +15,7 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.surjomukhi.syfpx"
+    applicationId = "com.tasfiwnlabs.surjomukhi"
     minSdk = 24
     targetSdk = 36
     versionCode = 1
@@ -122,3 +126,41 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+tasks.register("downloadFonts") {
+    val destDir = layout.projectDirectory.dir("src/main/res/font").asFile
+    outputs.dir(destDir)
+    doLast {
+        if (!destDir.exists()) {
+            destDir.mkdirs()
+        }
+        val baseUrl = "https://raw.githubusercontent.com/google/fonts/main/ofl/hindsiliguri"
+        val fontFiles = listOf(
+            "HindSiliguri-Regular.ttf" to "hind_siliguri_regular.ttf",
+            "HindSiliguri-Bold.ttf" to "hind_siliguri_bold.ttf",
+            "HindSiliguri-Medium.ttf" to "hind_siliguri_medium.ttf",
+            "HindSiliguri-Light.ttf" to "hind_siliguri_light.ttf",
+            "HindSiliguri-SemiBold.ttf" to "hind_siliguri_semibold.ttf"
+        )
+        for ((srcName, destName) in fontFiles) {
+            val destFile = File(destDir, destName)
+            if (!destFile.exists()) {
+                println("Downloading local font: $srcName -> $destName")
+                try {
+                    URI("$baseUrl/$srcName").toURL().openStream().use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                } catch (e: Exception) {
+                    println("Failed to download font $srcName: ${e.message}")
+                }
+            }
+        }
+    }
+}
+
+tasks.matching { it.name.startsWith("preBuild") }.all {
+    dependsOn("downloadFonts")
+}
+

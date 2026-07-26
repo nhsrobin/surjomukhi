@@ -18,6 +18,22 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    
+    // Start background sync service as a standard service when app is in the foreground
+    try {
+      val prefs = getSharedPreferences("surjomukhi_prefs", android.content.Context.MODE_PRIVATE)
+      val isBackgroundSyncEnabled = prefs.getBoolean("is_background_sync_enabled", true)
+      if (isBackgroundSyncEnabled) {
+        val serviceIntent = android.content.Intent(this, com.example.surjomukhi.SurjomukhiSyncService::class.java)
+        startService(serviceIntent)
+        
+        // Start the silent background alarm scheduler to run indefinitely in the background
+        com.example.surjomukhi.SurjomukhiAlarmReceiver.scheduleNextAlarm(this)
+      }
+    } catch (e: Exception) {
+      android.util.Log.d("MainActivity", "Failed to start background sync service or alarm: ${e.message}")
+    }
+
     enableEdgeToEdge()
     setContent {
       MyApplicationTheme(darkTheme = true) {

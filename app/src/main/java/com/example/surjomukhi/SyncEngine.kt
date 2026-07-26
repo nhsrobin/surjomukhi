@@ -1,10 +1,16 @@
 package com.example.surjomukhi
 
+import com.example.MainActivity
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.firestore.DocumentSnapshot
@@ -42,6 +48,26 @@ class SyncEngine(private val context: Context) {
     val partnerCustomText = MutableStateFlow("")
     val partnerUpdatedAt = MutableStateFlow(System.currentTimeMillis())
 
+    // Vibe Mute / Auto Mute properties
+    val myMuteUntil = MutableStateFlow(0L)
+    val myMuteMessage = MutableStateFlow("")
+    val partnerMuteUntil = MutableStateFlow(0L)
+    val partnerMuteMessage = MutableStateFlow("")
+    val autoMuteUntil = MutableStateFlow(0L)
+    val consecutiveVibesSent = MutableStateFlow(0)
+    val partnerLastKnownUpdatedAt = MutableStateFlow(0L)
+
+    // Functional Settings Options
+    val isVibrationEnabled = MutableStateFlow(true)
+    val isNotificationEnabled = MutableStateFlow(true)
+    val isBackgroundSyncEnabled = MutableStateFlow(true)
+    val vibrationDurationMs = MutableStateFlow(450L)
+
+    // Chirkut (চিরকুট) Custom Message Overlay States
+    val myChirkut = MutableStateFlow("")
+    val partnerChirkut = MutableStateFlow("")
+    val isChirkutEnabled = MutableStateFlow(true)
+
     // Direct event channel for vibrations
     private val _vibrationEvents = MutableSharedFlow<VibrationEvent>(0, 64)
     val vibrationEvents: SharedFlow<VibrationEvent> = _vibrationEvents
@@ -51,10 +77,80 @@ class SyncEngine(private val context: Context) {
     private var partnerDocListener: ListenerRegistration? = null
     private var vibrationListener: ListenerRegistration? = null
 
+    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+        when (key) {
+            "my_status" -> {
+                val newValue = prefs.getString("my_status", "free") ?: "free"
+                if (myStatus.value != newValue) {
+                    myStatus.value = newValue
+                }
+            }
+            "my_custom_text" -> {
+                val newValue = prefs.getString("my_custom_text", "") ?: ""
+                if (myCustomText.value != newValue) {
+                    myCustomText.value = newValue
+                }
+            }
+            "partner_status" -> {
+                val newValue = prefs.getString("partner_status", "free") ?: "free"
+                if (partnerStatus.value != newValue) {
+                    partnerStatus.value = newValue
+                }
+            }
+            "partner_custom_text" -> {
+                val newValue = prefs.getString("partner_custom_text", "") ?: ""
+                if (partnerCustomText.value != newValue) {
+                    partnerCustomText.value = newValue
+                }
+            }
+            "my_nickname" -> {
+                val newValue = prefs.getString("my_nickname", "আমার মন") ?: "আমার মন"
+                if (myNickname.value != newValue) {
+                    myNickname.value = newValue
+                }
+            }
+            "partner_nickname" -> {
+                val newValue = prefs.getString("partner_nickname", "কল্পনা") ?: "কল্পনা"
+                if (partnerNickname.value != newValue) {
+                    partnerNickname.value = newValue
+                }
+            }
+            "partner_phone" -> {
+                val newValue = prefs.getString("partner_phone", "") ?: ""
+                if (partnerPhone.value != newValue) {
+                    partnerPhone.value = newValue
+                    startSyncListeners()
+                }
+            }
+            "my_chirkut" -> {
+                val newValue = prefs.getString("my_chirkut", "") ?: ""
+                if (myChirkut.value != newValue) {
+                    myChirkut.value = newValue
+                }
+            }
+            "partner_chirkut" -> {
+                val newValue = prefs.getString("partner_chirkut", "") ?: ""
+                if (partnerChirkut.value != newValue) {
+                    partnerChirkut.value = newValue
+                }
+            }
+            "is_chirkut_enabled" -> {
+                val newValue = prefs.getBoolean("is_chirkut_enabled", true)
+                if (isChirkutEnabled.value != newValue) {
+                    isChirkutEnabled.value = newValue
+                }
+            }
+        }
+    }
+
     init {
         // Load persistent local configurations
         loadLocalPreferences()
         initializeFirebase()
+
+        // Register shared preference change listener
+        val prefs = context.getSharedPreferences("surjomukhi_prefs", Context.MODE_PRIVATE)
+        prefs.registerOnSharedPreferenceChangeListener(prefListener)
     }
 
     private fun loadLocalPreferences() {
@@ -68,6 +164,20 @@ class SyncEngine(private val context: Context) {
         myCustomText.value = prefs.getString("my_custom_text", "") ?: ""
         partnerStatus.value = prefs.getString("partner_status", "free") ?: "free"
         partnerCustomText.value = prefs.getString("partner_custom_text", "") ?: ""
+        myMuteUntil.value = prefs.getLong("my_mute_until", 0L)
+        myMuteMessage.value = prefs.getString("my_mute_message", "") ?: ""
+        partnerMuteUntil.value = prefs.getLong("partner_mute_until", 0L)
+        partnerMuteMessage.value = prefs.getString("partner_mute_message", "") ?: ""
+        autoMuteUntil.value = prefs.getLong("auto_mute_until", 0L)
+        consecutiveVibesSent.value = prefs.getInt("consecutive_vibes_sent", 0)
+        partnerLastKnownUpdatedAt.value = prefs.getLong("partner_last_known_updated_at", 0L)
+        isVibrationEnabled.value = prefs.getBoolean("is_vibration_enabled", true)
+        isNotificationEnabled.value = prefs.getBoolean("is_notification_enabled", true)
+        isBackgroundSyncEnabled.value = prefs.getBoolean("is_background_sync_enabled", true)
+        vibrationDurationMs.value = prefs.getLong("vibration_duration_ms", 450L)
+        myChirkut.value = prefs.getString("my_chirkut", "") ?: ""
+        partnerChirkut.value = prefs.getString("partner_chirkut", "") ?: ""
+        isChirkutEnabled.value = prefs.getBoolean("is_chirkut_enabled", true)
     }
 
     fun saveLocalPreferences() {
@@ -82,20 +192,33 @@ class SyncEngine(private val context: Context) {
             .putString("my_custom_text", myCustomText.value)
             .putString("partner_status", partnerStatus.value)
             .putString("partner_custom_text", partnerCustomText.value)
+            .putLong("my_mute_until", myMuteUntil.value)
+            .putString("my_mute_message", myMuteMessage.value)
+            .putLong("partner_mute_until", partnerMuteUntil.value)
+            .putString("partner_mute_message", partnerMuteMessage.value)
+            .putLong("auto_mute_until", autoMuteUntil.value)
+            .putInt("consecutive_vibes_sent", consecutiveVibesSent.value)
+            .putLong("partner_last_known_updated_at", partnerLastKnownUpdatedAt.value)
+            .putBoolean("is_vibration_enabled", isVibrationEnabled.value)
+            .putBoolean("is_notification_enabled", isNotificationEnabled.value)
+            .putBoolean("is_background_sync_enabled", isBackgroundSyncEnabled.value)
+            .putLong("vibration_duration_ms", vibrationDurationMs.value)
+            .putString("my_chirkut", myChirkut.value)
+            .putString("partner_chirkut", partnerChirkut.value)
+            .putBoolean("is_chirkut_enabled", isChirkutEnabled.value)
             .apply()
 
-        // Sync with Widget immediately
+        // Sync with Widget immediately & instantly without waiting for broadcast queue
         try {
-            val intent = Intent(context, com.example.surjomukhi.widget.SurjomukhiWidgetProvider::class.java).apply {
-                action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
+            val appWidgetManager = AppWidgetManager.getInstance(context)
+            val thisWidget = ComponentName(context, com.example.surjomukhi.widget.SurjomukhiWidgetProvider::class.java)
+            val ids = appWidgetManager.getAppWidgetIds(thisWidget)
+            val provider = com.example.surjomukhi.widget.SurjomukhiWidgetProvider()
+            for (id in ids) {
+                provider.updateWidgetContent(context, appWidgetManager, id)
             }
-            val ids = AppWidgetManager.getInstance(context).getAppWidgetIds(
-                ComponentName(context, com.example.surjomukhi.widget.SurjomukhiWidgetProvider::class.java)
-            )
-            intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
-            context.sendBroadcast(intent)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to broadcast widget update from SyncEngine", e)
+            Log.e(TAG, "Failed to execute immediate widget refresh from SyncEngine", e)
         }
     }
 
@@ -145,7 +268,9 @@ class SyncEngine(private val context: Context) {
                 "boundPartnerPhone" to partnerPhone.value,
                 "status" to myStatus.value,
                 "customText" to myCustomText.value,
-                "updatedAt" to System.currentTimeMillis()
+                "updatedAt" to System.currentTimeMillis(),
+                "vibeMuteUntil" to myMuteUntil.value,
+                "vibeMuteMessage" to myMuteMessage.value
             )
             db?.collection("users")?.document(phone)?.set(userMap)
             startSyncListeners()
@@ -158,7 +283,7 @@ class SyncEngine(private val context: Context) {
         if (phone.isEmpty() || !isFirestoreEnabled) return
 
         try {
-            // 1. Listen to MY document (to detect if partner binds to me, or modifies my nickname)
+            // 1. Listen to MY document (to detect binding or nickname changes)
             myDocListener = db?.collection("users")?.document(phone)
                 ?.addSnapshotListener { snapshot, e ->
                     if (e != null) {
@@ -168,8 +293,10 @@ class SyncEngine(private val context: Context) {
                     if (snapshot != null && snapshot.exists()) {
                         val boundPhone = snapshot.getString("boundPartnerPhone") ?: ""
                         val selfNickname = snapshot.getString("nickname") ?: "আমার মন"
+                        val selfChirkut = snapshot.getString("chirkut") ?: ""
                         
                         myNickname.value = selfNickname
+                        myChirkut.value = selfChirkut
                         
                         if (partnerPhone.value != boundPhone) {
                             partnerPhone.value = boundPhone
@@ -193,26 +320,53 @@ class SyncEngine(private val context: Context) {
                             partnerNickname.value = snapshot.getString("nickname") ?: "কল্পনা"
                             partnerStatus.value = snapshot.getString("status") ?: "free"
                             partnerCustomText.value = snapshot.getString("customText") ?: ""
-                            partnerUpdatedAt.value = snapshot.getLong("updatedAt") ?: System.currentTimeMillis()
+                            partnerChirkut.value = snapshot.getString("chirkut") ?: ""
+                            
+                            val newUpdatedAt = snapshot.getLong("updatedAt") ?: System.currentTimeMillis()
+                            partnerMuteUntil.value = snapshot.getLong("vibeMuteUntil") ?: 0L
+                            partnerMuteMessage.value = snapshot.getString("vibeMuteMessage") ?: ""
+                            
+                            if (newUpdatedAt > partnerLastKnownUpdatedAt.value) {
+                                consecutiveVibesSent.value = 0
+                                autoMuteUntil.value = 0L // reset auto-mute since partner had active response
+                                partnerLastKnownUpdatedAt.value = newUpdatedAt
+                            }
+                            partnerUpdatedAt.value = newUpdatedAt
                             saveLocalPreferences()
                         }
                     }
             }
 
-            // 3. Listen to incoming vibration pings directed to me
+            // 3. Listen to incoming vibration pings directed to me (Index-free, client-side filtered for resilience)
             vibrationListener = db?.collection("vibrations")
                 ?.whereEqualTo("toPhone", phone)
-                ?.whereGreaterThan("timestamp", System.currentTimeMillis() - 30_000)
                 ?.addSnapshotListener { querySnapshot, error ->
                     if (error != null) {
                         Log.w(TAG, "Listen vibration events failed", error)
                         return@addSnapshotListener
                     }
                     if (querySnapshot != null) {
+                        val fifteenSecsAgo = System.currentTimeMillis() - 15_000
                         for (doc in querySnapshot.documentChanges) {
+                            if (doc.type != com.google.firebase.firestore.DocumentChange.Type.ADDED) continue
                             val changeDoc = doc.document
                             val timestamp = changeDoc.getLong("timestamp") ?: 0
+                            if (timestamp < fifteenSecsAgo) continue
+
                             val fromPhone = changeDoc.getString("fromPhone") ?: ""
+                            
+                            // Reset consecutive vibes sent because partner interacted/responded
+                            consecutiveVibesSent.value = 0
+                            autoMuteUntil.value = 0L
+                            saveLocalPreferences()
+
+                            // Check if muted
+                            val isMuted = myMuteUntil.value > System.currentTimeMillis()
+
+                            if (!isMuted) {
+                                showVibrationNotification(context, partnerNickname.value)
+                            }
+
                             CoroutineScope(Dispatchers.Main).launch {
                                 _vibrationEvents.emit(VibrationEvent(fromPhone, phone, timestamp))
                             }
@@ -320,12 +474,40 @@ class SyncEngine(private val context: Context) {
         }
     }
 
-    fun sendVibrationPing() {
+    fun sendVibrationPing(): String {
         val from = myPhone.value
         val to = partnerPhone.value
         val timestamp = System.currentTimeMillis()
 
-        if (from.isEmpty() || to.isEmpty()) return
+        if (from.isEmpty() || to.isEmpty()) return "NO_CONNECTION"
+
+        // 1. Check if we are currently auto-muted (tana 3 vibes block for 30 mins)
+        if (autoMuteUntil.value > timestamp) {
+            return "AUTOMUTED"
+        }
+
+        // 2. Check if partner has muted us
+        if (partnerMuteUntil.value > timestamp) {
+            return "MUTED"
+        }
+
+        // 3. Track consecutive vibrations sent and check if we need to auto-mute
+        // Check if partner has updated since our last vibration
+        if (partnerUpdatedAt.value > partnerLastKnownUpdatedAt.value) {
+            consecutiveVibesSent.value = 0
+            partnerLastKnownUpdatedAt.value = partnerUpdatedAt.value
+        }
+
+        if (consecutiveVibesSent.value >= 3) {
+            // Auto-mute for 30 minutes!
+            autoMuteUntil.value = timestamp + 30 * 60 * 1000L
+            saveLocalPreferences()
+            return "AUTOMUTED_TRIGGERED"
+        }
+
+        // Increment consecutive vibes sent
+        consecutiveVibesSent.value += 1
+        saveLocalPreferences()
 
         // Local emit
         CoroutineScope(Dispatchers.Main).launch {
@@ -339,6 +521,124 @@ class SyncEngine(private val context: Context) {
                 "timestamp" to timestamp
             )
             db?.collection("vibrations")?.add(vMap)
+        }
+        return "SUCCESS"
+    }
+
+    fun updateMyMuteStatus(muteDurationMinutes: Int, message: String) {
+        val until = if (muteDurationMinutes > 0) {
+            System.currentTimeMillis() + muteDurationMinutes * 60 * 1000L
+        } else {
+            0L
+        }
+        myMuteUntil.value = until
+        myMuteMessage.value = message
+        saveLocalPreferences()
+
+        if (isFirestoreEnabled && myPhone.value.isNotEmpty()) {
+            db?.collection("users")?.document(myPhone.value)?.update(
+                mapOf(
+                    "vibeMuteUntil" to until,
+                    "vibeMuteMessage" to message
+                )
+            )
+        }
+    }
+
+    fun updateChirkut(message: String) {
+        myChirkut.value = message
+        saveLocalPreferences()
+
+        if (isFirestoreEnabled && myPhone.value.isNotEmpty()) {
+            db?.collection("users")?.document(myPhone.value)?.update("chirkut", message)
+        }
+    }
+
+    fun toggleChirkutEnabled(enabled: Boolean) {
+        isChirkutEnabled.value = enabled
+        saveLocalPreferences()
+    }
+
+    private fun showVibrationNotification(context: Context, senderName: String) {
+        if (!isNotificationEnabled.value) {
+            Log.d(TAG, "Notification skipped because they are disabled in settings")
+            return
+        }
+        val channelId = "surjomukhi_vibe_channel"
+        val notificationId = 1001
+
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "Heart Vibrations",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifications for incoming heart connection vibrations"
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 450, 150, 450)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        // Intent for main activity click
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val openPendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Action Intents
+        val silentIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = "com.example.surjomukhi.ACTION_SILENT"
+            putExtra("notificationId", notificationId)
+        }
+        val silentPendingIntent = PendingIntent.getBroadcast(
+            context,
+            1,
+            silentIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val muteIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = "com.example.surjomukhi.ACTION_MUTE"
+            putExtra("notificationId", notificationId)
+        }
+        val mutePendingIntent = PendingIntent.getBroadcast(
+            context,
+            2,
+            muteIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val isBn = context.getSharedPreferences("surjomukhi_prefs", Context.MODE_PRIVATE)
+            .getBoolean("is_bangla_lang", true)
+
+        val title = if (isBn) "মনের স্পর্শ! 🌻" else "Heart Connection! 🌻"
+        val content = if (isBn) "\"$senderName\" আপনাকে স্পর্শ করতে চেয়েছে!" else "\"$senderName\" is trying to touch your heart!"
+        val silentLabel = if (isBn) "সাইলেন্ট" else "Silent"
+        val muteLabel = if (isBn) "মিউট" else "Mute"
+
+        val builder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setAutoCancel(true)
+            .setContentIntent(openPendingIntent)
+            .addAction(android.R.drawable.ic_lock_silent_mode, silentLabel, silentPendingIntent)
+            .addAction(android.R.drawable.ic_media_pause, muteLabel, mutePendingIntent)
+
+        try {
+            notificationManager.notify(notificationId, builder.build())
+        } catch (e: SecurityException) {
+            Log.e("SyncEngine", "Permission missing for notification display", e)
         }
     }
 
@@ -365,6 +665,12 @@ class SyncEngine(private val context: Context) {
     }
 
     fun shutdown() {
+        try {
+            val prefs = context.getSharedPreferences("surjomukhi_prefs", Context.MODE_PRIVATE)
+            prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error unregistering prefListener", e)
+        }
         shutdownListeners()
     }
 }

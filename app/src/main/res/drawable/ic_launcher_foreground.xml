@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/ic_sunflower_1780900638236"
+        android:drawable="@drawable/surjomukhi_logo"
         android:gravity="center" />
 </layer-list>
