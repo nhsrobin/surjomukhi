@@ -22,7 +22,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MyApplication">
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.MyApplication">
@@ -34,7 +34,7 @@
         </activity>
 
         <!-- Realtime Home Screen Sync Widget Receiver -->
-        <receiver android:name=".surjomukhi.widget.SurjomukhiWidgetProvider"
+        <receiver android:name="com.example.surjomukhi.widget.SurjomukhiWidgetProvider"
             android:exported="true"
             android:label="🌻 Surjomukhi Sync Widget">
             <intent-filter>
@@ -57,13 +57,13 @@
         </receiver>
 
         <service
-            android:name=".surjomukhi.SurjomukhiSyncService"
+            android:name="com.example.surjomukhi.SurjomukhiSyncService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
         <receiver
-            android:name=".surjomukhi.NotificationActionReceiver"
+            android:name="com.example.surjomukhi.NotificationActionReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.example.surjomukhi.ACTION_MUTE" />
@@ -73,7 +73,7 @@
 
         <!-- Silent background exact alarm sync receiver -->
         <receiver
-            android:name=".surjomukhi.SurjomukhiAlarmReceiver"
+            android:name="com.example.surjomukhi.SurjomukhiAlarmReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
