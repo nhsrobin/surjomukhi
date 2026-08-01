@@ -2654,7 +2654,7 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
 
                                 Divider(color = Color(0xFF1E2F45), thickness = 0.5.dp, modifier = Modifier.padding(vertical = 10.dp))
 
-                                // SECTION 7: GITHUB OTA UPDATES (NO USB REQUIRED)
+                                // SECTION 7: SURJOMUKHI UPDATE CENTER
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
                                     colors = CardDefaults.cardColors(containerColor = Color(0xFF0A121D)),
@@ -2668,10 +2668,10 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
                                             modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("🐙", fontSize = 16.sp)
+                                                Text("✨", fontSize = 16.sp)
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Text(
-                                                    text = if (isBn) "গিটহাব অটো-আপডেট (No USB)" else "GitHub OTA Auto-Update",
+                                                    text = if (isBn) "সূর্যমুখী আপডেট সেন্টার" else "Surjomukhi Update Center",
                                                     color = Color(0xFF60A5FA),
                                                     fontSize = 13.sp,
                                                     fontWeight = FontWeight.Bold
@@ -2685,35 +2685,29 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
                                         }
 
                                         Text(
-                                            text = if (isBn) "গিটহাব রেপো নাম:" else "GitHub Repository Slug:",
+                                            text = if (isBn) "আপডেট সোর্স Channel: $gitHubRepo" else "Update Source: $gitHubRepo",
                                             fontSize = 10.sp,
                                             color = Color.Gray
-                                        )
-                                        Text(
-                                            text = gitHubRepo,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White,
-                                            modifier = Modifier.padding(vertical = 2.dp)
                                         )
 
                                         if (!gitHubStatusMessage.isNullOrBlank()) {
                                             Text(
                                                 text = gitHubStatusMessage!!,
-                                                fontSize = 10.sp,
+                                                fontSize = 11.sp,
                                                 color = if (isGitHubUpdateAvailable) Color(0xFF00FF88) else Color(0xFF94A3B8),
-                                                modifier = Modifier.padding(bottom = 6.dp)
+                                                fontWeight = FontWeight.Medium,
+                                                modifier = Modifier.padding(vertical = 4.dp)
                                             )
                                         }
 
                                         Row(
-                                            modifier = Modifier.fillMaxWidth(),
+                                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             Button(
                                                 onClick = { viewModel.checkForGitHubUpdates() },
                                                 enabled = !isCheckingGitHubUpdate,
-                                                modifier = Modifier.weight(1.2f).height(36.dp),
+                                                modifier = Modifier.weight(1.3f).height(36.dp),
                                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F), contentColor = Color(0xFF60A5FA)),
                                                 shape = RoundedCornerShape(8.dp),
                                                 contentPadding = PaddingValues(0.dp)
@@ -2725,7 +2719,7 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
                                                     Text("🔄 ", fontSize = 12.sp)
                                                 }
                                                 Text(
-                                                    text = if (isBn) "আপডেট চেক" else "Check Now",
+                                                    text = if (isBn) "নতুন ভার্সন চেক করুন" else "Check for Updates",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold
                                                 )
@@ -2736,13 +2730,13 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
                                                     inputGitHubRepoSlug = gitHubRepo
                                                     showGitHubRepoDialog = true
                                                 },
-                                                modifier = Modifier.weight(1f).height(36.dp),
+                                                modifier = Modifier.weight(0.9f).height(36.dp),
                                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B), contentColor = Color.White),
                                                 shape = RoundedCornerShape(8.dp),
                                                 contentPadding = PaddingValues(0.dp)
                                             ) {
                                                 Text(
-                                                    text = if (isBn) "✏️ রেপো চেঞ্জ" else "✏️ Change Repo",
+                                                    text = if (isBn) "⚙️ রেপো চেঞ্জ" else "⚙️ Settings",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold
                                                 )
@@ -2936,10 +2930,10 @@ fun GitHubUpdateBanner(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🚀", fontSize = 18.sp)
+                    Text("✨", fontSize = 18.sp)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isBn) "গিটহাবে নতুন কোড আপডেট পাওয়া গেছে!" else "New GitHub OTA Update Found!",
+                        text = if (isBn) "সূর্যমুখী অ্যাপের নতুন ভার্সন এসেছে!" else "New Surjomukhi App Version Available!",
                         color = Color(0xFF00FF88),
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
@@ -2959,7 +2953,7 @@ fun GitHubUpdateBanner(
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = releaseInfo.releaseTitle.ifEmpty { if (isBn) "গিটহাবে নতুন কোড পরিবর্তন সফলভাবে আপডেট করা হয়েছে" else "Code update pushed to GitHub repository" },
+                text = releaseInfo.releaseTitle.ifEmpty { if (isBn) "উন্নত অভিজ্ঞতা উপভোগ করতে অ্যাপটি আপডেট করে নিন" else "Update the app to enjoy improved experience and features" },
                 color = Color.White,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold
@@ -2991,7 +2985,7 @@ fun GitHubUpdateBanner(
                     contentPadding = PaddingValues(0.dp)
                 ) {
                     Text(
-                        text = if (isBn) "📥 সরাসরি APK ডাউনলোড" else "📥 Download APK",
+                        text = if (isBn) "📥 এখনই আপডেট করুন" else "📥 Update Now",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -3005,7 +2999,7 @@ fun GitHubUpdateBanner(
                     contentPadding = PaddingValues(0.dp)
                 ) {
                     Text(
-                        text = if (isBn) "🔗 গিটহাব দেখুন" else "🔗 View Repo",
+                        text = if (isBn) "ℹ️ বিবরণ দেখুন" else "ℹ️ View Details",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )

@@ -27,9 +27,9 @@ class GitHubUpdateManager(private val context: Context) {
     private val TAG = "GitHubUpdateManager"
     private val prefs = context.getSharedPreferences("surjomukhi_github_prefs", Context.MODE_PRIVATE)
 
-    // Current GitHub repository owner/name (e.g., "tasfiwnlabs/surjomukhi")
+    // Current GitHub repository owner/name (e.g., "nhsrobin/surjomukhi")
     val githubRepo = MutableStateFlow(
-        prefs.getString("github_repo_slug", "tasfiwnlabs/surjomukhi") ?: "tasfiwnlabs/surjomukhi"
+        prefs.getString("github_repo_slug", "nhsrobin/surjomukhi") ?: "nhsrobin/surjomukhi"
     )
 
     // Update Status States
@@ -58,11 +58,11 @@ class GitHubUpdateManager(private val context: Context) {
 
     suspend fun checkForUpdates(currentVersionName: String = "1.0.0"): Boolean = withContext(Dispatchers.IO) {
         _isChecking.value = true
-        _statusMessage.value = "গিটহাব থেকে সর্বশেষ পরিবর্তন চেক করা হচ্ছে..."
+        _statusMessage.value = "অ্যাপের সর্বশেষ সংস্করণ পরীক্ষা করা হচ্ছে..."
         
         val slug = githubRepo.value
         if (slug.isBlank() || !slug.contains("/")) {
-            _statusMessage.value = "গিটহাব রেপো নাম সঠিক নয় (যেমন: username/repo)"
+            _statusMessage.value = "আপডেট কনফিগারেশন চেক করুন"
             _isChecking.value = false
             return@withContext false
         }
@@ -75,8 +75,8 @@ class GitHubUpdateManager(private val context: Context) {
             if (responseJson != null && responseJson.startsWith("{")) {
                 val jsonObject = JSONObject(responseJson)
                 val tagName = jsonObject.optString("tag_name", "v1.0.0")
-                val releaseName = jsonObject.optString("name", "New GitHub Release")
-                val body = jsonObject.optString("body", "গিটহাবে নতুন কোড আপডেট করা হয়েছে।")
+                val releaseName = jsonObject.optString("name", "সূর্যমুখী নতুন আপডেট")
+                val body = jsonObject.optString("body", "সূর্যমুখী অ্যাপে নতুন বৈশিষ্ট্য ও পারফরম্যান্স আপডেট যুক্ত করা হয়েছে।")
                 val htmlUrl = jsonObject.optString("html_url", "https://github.com/$slug")
                 val publishedAt = jsonObject.optString("published_at", "")
 
@@ -112,9 +112,9 @@ class GitHubUpdateManager(private val context: Context) {
                 _isUpdateAvailable.value = isNewer
 
                 if (isNewer) {
-                    _statusMessage.value = "🚀 গিটহাবে নতুন আপডেট পাওয়া গেছে: $tagName"
+                    _statusMessage.value = "🎉 সূর্যমুখী অ্যাপের নতুন ভার্সন ($tagName) এসেছে!"
                 } else {
-                    _statusMessage.value = "আপনার অ্যাপটি গিটহাবের সর্বশেষ কোডের সাথে আপ-টু-ডেট রয়েছে।"
+                    _statusMessage.value = "আপনার সূর্যমুখী অ্যাপটি সর্বশেষ ভার্সনে আপডেট রয়েছে।"
                 }
 
                 _isChecking.value = false
@@ -126,12 +126,12 @@ class GitHubUpdateManager(private val context: Context) {
                 if (commitResponse != null && commitResponse.startsWith("{")) {
                     val commitJson = JSONObject(commitResponse)
                     val sha = commitJson.optString("sha", "").take(7)
-                    val commitMsg = commitJson.optJSONObject("commit")?.optString("message") ?: "গিটহাব কমিট আপডেট"
+                    val commitMsg = commitJson.optJSONObject("commit")?.optString("message") ?: "নতুন অ্যাপ ফিচার আপডেট"
                     val htmlUrl = commitJson.optString("html_url", "https://github.com/$slug")
 
                     val release = GitHubReleaseInfo(
-                        tagName = "Commit $sha",
-                        releaseTitle = "GitHub Latest Commit ($sha)",
+                        tagName = "v1.0.$sha",
+                        releaseTitle = "সূর্যমুখী নতুন সংস্করণ",
                         body = commitMsg,
                         htmlUrl = htmlUrl,
                         apkDownloadUrl = htmlUrl,
@@ -143,15 +143,15 @@ class GitHubUpdateManager(private val context: Context) {
 
                     _latestRelease.value = release
                     _isUpdateAvailable.value = isNewCommit
-                    _statusMessage.value = if (isNewCommit) "🚀 গিটহাবে নতুন কোড পরিবর্তন ($sha) পাওয়া গেছে!" else "গিটহাব কোড আপডেট চেক সম্পন্ন হয়েছে।"
+                    _statusMessage.value = if (isNewCommit) "🎉 সূর্যমুখী অ্যাপে নতুন আপডেট পাওয়া গেছে!" else "আপনার অ্যাপটি লেটেস্ট সংস্করণে আপডেট করা আছে।"
 
                     _isChecking.value = false
                     return@withContext isNewCommit
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking GitHub updates: ${e.message}", e)
-            _statusMessage.value = "গিটহাব নেটওয়ার্ক কানেকশন ব্যর্থ হয়েছে: ${e.localizedMessage}"
+            Log.e(TAG, "Error checking updates: ${e.message}", e)
+            _statusMessage.value = "সর্বশেষ সংস্করণ চেক করতে সমস্যা হয়েছে, ইন্টারনেট সংযোগ পরীক্ষা করুন।"
         }
 
         _isChecking.value = false
