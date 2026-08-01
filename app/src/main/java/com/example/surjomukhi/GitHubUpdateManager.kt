@@ -1,7 +1,16 @@
 package com.example.surjomukhi
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import com.example.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,7 +36,7 @@ class GitHubUpdateManager(private val context: Context) {
     private val TAG = "GitHubUpdateManager"
     private val prefs = context.getSharedPreferences("surjomukhi_github_prefs", Context.MODE_PRIVATE)
 
-    // Current GitHub repository owner/name (e.g., "nhsrobin/surjomukhi")
+    // Current GitHub repository owner/name (nhsrobin/surjomukhi)
     val githubRepo = MutableStateFlow(
         prefs.getString("github_repo_slug", "nhsrobin/surjomukhi") ?: "nhsrobin/surjomukhi"
     )
@@ -52,8 +61,10 @@ class GitHubUpdateManager(private val context: Context) {
 
     fun updateRepoSlug(newSlug: String) {
         val cleanSlug = newSlug.trim().removePrefix("https://github.com/").removeSuffix(".git").removeSuffix("/")
-        prefs.edit().putString("github_repo_slug", cleanSlug).apply()
-        githubRepo.value = cleanSlug
+        if (cleanSlug.isNotBlank()) {
+            prefs.edit().putString("github_repo_slug", cleanSlug).apply()
+            githubRepo.value = cleanSlug
+        }
     }
 
     suspend fun checkForUpdates(currentVersionName: String = "1.0.0"): Boolean = withContext(Dispatchers.IO) {
@@ -113,6 +124,11 @@ class GitHubUpdateManager(private val context: Context) {
 
                 if (isNewer) {
                     _statusMessage.value = "🎉 সূর্যমুখী অ্যাপের নতুন ভার্সন ($tagName) এসেছে!"
+                    showSystemNotification(
+                        title = "🎉 সূর্যমুখী অ্যাপের নতুন ভার্সন এসেছে!",
+                        message = "নতুন ভার্সন $tagName আপডেট উপলব্ধ। আপনার অ্যাপটি আপডেট করতে ট্যাপ করুন।",
+                        apkUrl = release.apkDownloadUrl ?: release.htmlUrl
+                    )
                 } else {
                     _statusMessage.value = "আপনার সূর্যমুখী অ্যাপটি সর্বশেষ ভার্সনে আপডেট রয়েছে।"
                 }
@@ -145,6 +161,14 @@ class GitHubUpdateManager(private val context: Context) {
                     _isUpdateAvailable.value = isNewCommit
                     _statusMessage.value = if (isNewCommit) "🎉 সূর্যমুখী অ্যাপে নতুন আপডেট পাওয়া গেছে!" else "আপনার অ্যাপটি লেটেস্ট সংস্করণে আপডেট করা আছে।"
 
+                    if (isNewCommit) {
+                        showSystemNotification(
+                            title = "🎉 সূর্যমুখী অ্যাপের নতুন আপডেট পাওয়া গেছে!",
+                            message = "নতুন বৈশিষ্ট্য যুক্ত হয়েছে। অ্যাপটি আপডেট করতে এখানে ট্যাপ করুন।",
+                            apkUrl = release.apkDownloadUrl ?: release.htmlUrl
+                        )
+                    }
+
                     _isChecking.value = false
                     return@withContext isNewCommit
                 }
@@ -160,6 +184,53 @@ class GitHubUpdateManager(private val context: Context) {
 
     fun dismissUpdate() {
         _isUpdateAvailable.value = false
+    }
+
+    private fun showSystemNotification(title: String, message: String, apkUrl: String) {
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                ?: return
+            val channelId = "surjomukhi_app_updates"
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    channelId,
+                    "সূর্যমুখী অ্যাপ আপডেট",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "সূর্যমুখী অ্যাপের নতুন ভার্সন আপডেট নোটিফিকেশন"
+                    enableLights(true)
+                    lightColor = android.graphics.Color.GREEN
+                    enableVibration(true)
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                1001,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(R.drawable.icon)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .build()
+
+            notificationManager.notify(1001, notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to post system update notification: ${e.message}")
+        }
     }
 
     private fun isVersionNewer(remoteVersionTag: String, localVersionName: String): Boolean {
@@ -213,3 +284,4 @@ class GitHubUpdateManager(private val context: Context) {
         }
     }
 }
+

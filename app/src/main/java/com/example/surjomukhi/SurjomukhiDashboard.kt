@@ -94,8 +94,6 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
     val isGitHubUpdateAvailable by viewModel.isGitHubUpdateAvailable.collectAsState()
     val latestGitHubRelease by viewModel.latestGitHubRelease.collectAsState()
     val gitHubStatusMessage by viewModel.gitHubStatusMessage.collectAsState()
-    var showGitHubRepoDialog by remember { mutableStateOf(false) }
-    var inputGitHubRepoSlug by remember { mutableStateOf(gitHubRepo) }
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
 
     var showMuteSettings by remember { mutableStateOf(false) }
@@ -2700,47 +2698,25 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
                                             )
                                         }
 
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        Button(
+                                            onClick = { viewModel.checkForGitHubUpdates() },
+                                            enabled = !isCheckingGitHubUpdate,
+                                            modifier = Modifier.fillMaxWidth().height(40.dp).padding(top = 4.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F), contentColor = Color(0xFF60A5FA)),
+                                            shape = RoundedCornerShape(10.dp),
+                                            contentPadding = PaddingValues(0.dp)
                                         ) {
-                                            Button(
-                                                onClick = { viewModel.checkForGitHubUpdates() },
-                                                enabled = !isCheckingGitHubUpdate,
-                                                modifier = Modifier.weight(1.3f).height(36.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F), contentColor = Color(0xFF60A5FA)),
-                                                shape = RoundedCornerShape(8.dp),
-                                                contentPadding = PaddingValues(0.dp)
-                                            ) {
-                                                if (isCheckingGitHubUpdate) {
-                                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color(0xFF60A5FA), strokeWidth = 2.dp)
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                } else {
-                                                    Text("🔄 ", fontSize = 12.sp)
-                                                }
-                                                Text(
-                                                    text = if (isBn) "নতুন ভার্সন চেক করুন" else "Check for Updates",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
+                                            if (isCheckingGitHubUpdate) {
+                                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF60A5FA), strokeWidth = 2.dp)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                            } else {
+                                                Text("🔄 ", fontSize = 13.sp)
                                             }
-
-                                            Button(
-                                                onClick = {
-                                                    inputGitHubRepoSlug = gitHubRepo
-                                                    showGitHubRepoDialog = true
-                                                },
-                                                modifier = Modifier.weight(0.9f).height(36.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B), contentColor = Color.White),
-                                                shape = RoundedCornerShape(8.dp),
-                                                contentPadding = PaddingValues(0.dp)
-                                            ) {
-                                                Text(
-                                                    text = if (isBn) "⚙️ রেপো চেঞ্জ" else "⚙️ Settings",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
+                                            Text(
+                                                text = if (isBn) "নতুন ভার্সন চেক করুন" else "Check for Updates",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
                                         }
                                     }
                                 }
@@ -2846,63 +2822,6 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
             },
             containerColor = Color(0xFF1B1B26),
             shape = RoundedCornerShape(20.dp)
-        )
-    }
-
-    // DIALOG 3: GITHUB REPO CHANGE CONTROL
-    if (showGitHubRepoDialog) {
-        AlertDialog(
-            onDismissRequest = { showGitHubRepoDialog = false },
-            title = {
-                Text(
-                    text = if (isBn) "গিটহাব রেপজিটরি পরিবর্তন" else "Change GitHub Repository",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
-            },
-            text = {
-                Column {
-                    Text(
-                        text = if (isBn) "আপনার গিটহাবের username/repository লিখুন:" else "Enter your GitHub username/repository slug:",
-                        color = Color.LightGray,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    OutlinedTextField(
-                        value = inputGitHubRepoSlug,
-                        onValueChange = { inputGitHubRepoSlug = it },
-                        label = { Text(if (isBn) "গিটহাব রেপো স্ল্যাগ" else "GitHub Repo Slug") },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF60A5FA),
-                            unfocusedBorderColor = Color(0xFF2C2C3F)
-                        )
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (inputGitHubRepoSlug.isNotBlank()) {
-                            viewModel.updateGitHubRepoSlug(inputGitHubRepoSlug)
-                        }
-                        showGitHubRepoDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF60A5FA), contentColor = Color.Black)
-                ) {
-                    Text(text = if (isBn) "সংরক্ষণ ও চেক" else "Save & Check", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showGitHubRepoDialog = false }) {
-                    Text(text = if (isBn) "বাতিল" else "Cancel", color = Color.Gray, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                }
-            },
-            containerColor = Color(0xFF070B12),
-            shape = RoundedCornerShape(24.dp)
         )
     }
 }
