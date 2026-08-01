@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/surjomukhi_logo"
+        android:drawable="@drawable/icon"
         android:gravity="center" />
 </layer-list>

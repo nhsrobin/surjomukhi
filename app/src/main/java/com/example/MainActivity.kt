@@ -5,12 +5,21 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import com.example.surjomukhi.MainViewModel
 import com.example.surjomukhi.SurjomukhiDashboard
+import com.example.surjomukhi.SurjomukhiSplashScreen
 import com.example.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
@@ -37,9 +46,27 @@ class MainActivity : ComponentActivity() {
     enableEdgeToEdge()
     setContent {
       MyApplicationTheme(darkTheme = true) {
-        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-          // Handle safe-area padding inside the dashboard dynamically with WindowInsets
+        var isSplashVisible by remember { mutableStateOf(true) }
+
+        Box(
+          modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF030712))
+        ) {
+          // Main Dashboard UI
           SurjomukhiDashboard(viewModel = viewModel)
+
+          // Modern Animated Splash Screen (stays visible until app opens properly)
+          AnimatedVisibility(
+            visible = isSplashVisible,
+            exit = fadeOut(animationSpec = tween(700))
+          ) {
+            SurjomukhiSplashScreen(
+              onInitializationComplete = {
+                isSplashVisible = false
+              }
+            )
+          }
         }
       }
     }
@@ -51,3 +78,4 @@ class MainActivity : ComponentActivity() {
     viewModel.triggerWidgetUpdate()
   }
 }
+
