@@ -1,6 +1,7 @@
 import java.io.File
 import java.net.URL
 import java.net.URI
+import java.util.Base64
 
 plugins {
   alias(libs.plugins.android.application)
@@ -34,10 +35,20 @@ android {
       keyPassword = System.getenv("KEY_PASSWORD")
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+      val ksFile = file("${rootDir}/debug.keystore")
+      val ksBase64File = file("${rootDir}/debug.keystore.base64")
+      if (!ksFile.exists() && ksBase64File.exists()) {
+        try {
+          val decoded = Base64.getDecoder().decode(ksBase64File.readText().trim())
+          ksFile.writeBytes(decoded)
+        } catch (_: Exception) {}
+      }
+      if (ksFile.exists()) {
+        storeFile = ksFile
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
     }
   }
 
