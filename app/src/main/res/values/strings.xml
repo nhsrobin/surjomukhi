@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Surjomukhi</string>
+    <string name="default_web_client_id">592810166563-surjomukhi.apps.googleusercontent.com</string>
 </resources>

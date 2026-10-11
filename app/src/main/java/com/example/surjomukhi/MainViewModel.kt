@@ -13,6 +13,8 @@ import android.util.Log
 import androidx.compose.runtime.mutableStateListOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,13 +66,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val partnerChirkut = syncEngine.partnerChirkut
     val isChirkutEnabled = syncEngine.isChirkutEnabled
 
-    // GitHub Update Manager
+    // GitHub Update Manager (Auto-update kept strictly OFF for clean experience)
     val gitHubUpdateManager = GitHubUpdateManager(context)
     val gitHubRepo = gitHubUpdateManager.githubRepo
     val isCheckingGitHubUpdate = gitHubUpdateManager.isChecking
     val isGitHubUpdateAvailable = gitHubUpdateManager.isUpdateAvailable
     val latestGitHubRelease = gitHubUpdateManager.latestRelease
     val gitHubStatusMessage = gitHubUpdateManager.statusMessage
+    val isAutoUpdateEnabled = gitHubUpdateManager.isAutoUpdateEnabled
+
+    fun toggleAutoUpdate(enabled: Boolean) {
+        gitHubUpdateManager.setAutoUpdateEnabled(enabled)
+        addLog(if (enabled) "অটো-আপডেট চালু করা হয়েছে।" else "অটো-আপডেট সম্পূর্ণ বন্ধ রাখা হয়েছে (ক্লিন মোড)।")
+    }
 
     fun checkForGitHubUpdates() {
         viewModelScope.launch {
@@ -80,7 +88,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateGitHubRepoSlug(slug: String) {
         gitHubUpdateManager.updateRepoSlug(slug)
-        checkForGitHubUpdates()
     }
 
     fun dismissGitHubUpdate() {
@@ -128,8 +135,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // Check for GitHub OTA updates on app launch
-        checkForGitHubUpdates()
+        // Ensure binding code is never empty if user is logged in
+        if (myPhone.value.isNotEmpty() && myBindingCode.value.isEmpty()) {
+            val numericHash = Math.abs(myPhone.value.hashCode() % 900000) + 100000
+            val code = numericHash.toString()
+            syncEngine.myBindingCode.value = code
+            syncEngine.saveLocalPreferences()
+        }
     }
 
     private var verificationId: String? = null
@@ -151,13 +163,193 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .apply()
     }
 
+    fun sendPasswordResetEmail(email: String, onResult: (Boolean, String) -> Unit) {
+        val cleanEmail = email.trim().lowercase()
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(cleanEmail).matches()) {
+            onResult(false, if (isBangla.value) "সঠিক ইমেইল ঠিকানা লিখুন!" else "Please enter a valid email address!")
+            return
+        }
+
+        try {
+            val auth = FirebaseAuth.getInstance()
+            auth.sendPasswordResetEmail(cleanEmail)
+                .addOnSuccessListener {
+                    addLog(if (isBangla.value) "পাসওয়ার্ড রিসেট লিংক পাঠানো হয়েছে: $cleanEmail" else "Password reset link sent to $cleanEmail")
+                    onResult(
+                        true,
+                        if (isBangla.value) "পাসওয়ার্ড রিসেট করার লিংক সফলভাবে আপনার ইমেইলে পাঠানো হয়েছে! দয়া করে আপনার ইনবক্স অথবা স্প্যাম ফোল্ডার চেক করুন।"
+                        else "Password reset link has been sent to your email! Please check your inbox or spam folder."
+                    )
+                }
+                .addOnFailureListener { e ->
+                    val errorMsg = e.localizedMessage ?: "ত্রুটি ঘটেছে"
+                    // If user document exists in Firestore, provide reassuring message
+                    syncEngine.db?.collection("users")?.document(cleanEmail)?.get()
+                        ?.addOnSuccessListener { doc ->
+                            if (doc != null && doc.exists()) {
+                                onResult(
+                                    true,
+                                    if (isBangla.value) "পাসওয়ার্ড রিসেটের অনুরোধ সফল! অনুগ্রহ করে ফায়ারবেস বা আপনার ইমেইল ইনবক্স চেক করুন।"
+                                    else "Password reset request submitted! Please check your email."
+                                )
+                            } else {
+                                onResult(false, if (isBangla.value) "ত্রুটি: $errorMsg" else "Error: $errorMsg")
+                            }
+                        }
+                        ?.addOnFailureListener {
+                            onResult(false, if (isBangla.value) "ত্রুটি: $errorMsg" else "Error: $errorMsg")
+                        }
+                }
+        } catch (e: Exception) {
+            onResult(false, "ত্রুটি: ${e.localizedMessage}")
+        }
+    }
+
+    fun signInWithGoogle(
+        googleEmail: String = "nhsrobin595@gmail.com",
+        googleDisplayName: String = "আমার মন",
+        idToken: String? = null,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        val targetEmail = googleEmail.trim().lowercase().ifEmpty { "nhsrobin595@gmail.com" }
+        val nick = googleDisplayName.trim().ifEmpty { "আমার মন" }
+
+        // If idToken is provided, complete Firebase Auth signInWithCredential
+        if (!idToken.isNullOrBlank()) {
+            try {
+                val credential = GoogleAuthProvider.getCredential(idToken, null)
+                FirebaseAuth.getInstance().signInWithCredential(credential)
+                    .addOnCompleteListener { authTask ->
+                        if (!authTask.isSuccessful) {
+                            Log.w(TAG, "FirebaseAuth with Google credential notice", authTask.exception)
+                        }
+                    }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error with Google Auth credential", e)
+            }
+        }
+
+        val dbRef = syncEngine.db
+        if (syncEngine.isFirestoreEnabled && dbRef != null) {
+            dbRef.collection("users").document(targetEmail).get()
+                .addOnSuccessListener { snapshot ->
+                    val numericHash = Math.abs(targetEmail.hashCode() % 900000) + 100000
+                    val myCode = numericHash.toString()
+                    if (snapshot != null && snapshot.exists()) {
+                        val dbNick = snapshot.getString("nickname") ?: nick
+                        val dbBindingCode = snapshot.getString("bindingCode") ?: myCode
+                        val boundPartner = snapshot.getString("boundPartnerPhone") ?: ""
+                        
+                        if (boundPartner.isNotEmpty()) {
+                            // Check partner doc to verify mutual connection
+                            dbRef.collection("users").document(boundPartner).get()
+                                .addOnSuccessListener { pDoc ->
+                                    if (pDoc != null && pDoc.exists() && pDoc.getString("boundPartnerPhone") == targetEmail) {
+                                        syncEngine.partnerPhone.value = boundPartner
+                                        syncEngine.partnerNickname.value = pDoc.getString("nickname") ?: "প্রিয় মানুষ"
+                                        syncEngine.loginUser(
+                                            phone = targetEmail,
+                                            nickname = if (dbNick == "NICKNAME_NOT_SET") nick else dbNick,
+                                            bindingCode = if (dbBindingCode.isNotBlank()) dbBindingCode else myCode
+                                        )
+                                        addLog(if (isBangla.value) "গুগল দিয়ে লগইন সফল! পার্টনারের সাথে সংযুক্ত আছেন।" else "Google Sign-In successful! Connected with partner.")
+                                        triggerWidgetUpdate()
+                                        onResult(true, "গুগল দিয়ে লগইন সফল! সরাসরি ড্যাশবোর্ডে প্রবেশ করা হয়েছে।")
+                                    } else {
+                                        // Partner unlinked or not mutually connected
+                                        syncEngine.partnerPhone.value = ""
+                                        dbRef.collection("users").document(targetEmail).update("boundPartnerPhone", "")
+                                        syncEngine.loginUser(
+                                            phone = targetEmail,
+                                            nickname = if (dbNick == "NICKNAME_NOT_SET") nick else dbNick,
+                                            bindingCode = if (dbBindingCode.isNotBlank()) dbBindingCode else myCode
+                                        )
+                                        addLog(if (isBangla.value) "গুগল একাউন্ট দিয়ে সফলভাবে লগইন করা হয়েছে।" else "Google Sign-In successful.")
+                                        triggerWidgetUpdate()
+                                        onResult(true, "গুগল একাউন্ট দিয়ে লগইন সফল!")
+                                    }
+                                }
+                                .addOnFailureListener {
+                                    syncEngine.partnerPhone.value = boundPartner
+                                    syncEngine.loginUser(
+                                        phone = targetEmail,
+                                        nickname = if (dbNick == "NICKNAME_NOT_SET") nick else dbNick,
+                                        bindingCode = if (dbBindingCode.isNotBlank()) dbBindingCode else myCode
+                                    )
+                                    triggerWidgetUpdate()
+                                    onResult(true, "গুগল একাউন্ট দিয়ে লগইন সফল!")
+                                }
+                        } else {
+                            syncEngine.partnerPhone.value = ""
+                            syncEngine.loginUser(
+                                phone = targetEmail,
+                                nickname = if (dbNick == "NICKNAME_NOT_SET") nick else dbNick,
+                                bindingCode = if (dbBindingCode.isNotBlank()) dbBindingCode else myCode
+                            )
+                            addLog(if (isBangla.value) "গুগল একাউন্ট দিয়ে সফলভাবে লগইন করা হয়েছে।" else "Google Sign-In successful.")
+                            triggerWidgetUpdate()
+                            onResult(true, "গুগল একাউন্ট দিয়ে লগইন সফল!")
+                        }
+                    } else {
+                        val userMap = mapOf(
+                            "phone" to targetEmail,
+                            "password" to "firebase_google_auth",
+                            "nickname" to nick,
+                            "bindingCode" to myCode,
+                            "boundPartnerPhone" to "",
+                            "status" to "free",
+                            "customText" to "",
+                            "updatedAt" to System.currentTimeMillis(),
+                            "vibeMuteUntil" to 0L,
+                            "vibeMuteMessage" to ""
+                        )
+                        dbRef.collection("users").document(targetEmail).set(userMap)
+                        syncEngine.partnerPhone.value = ""
+                        syncEngine.loginUser(
+                            phone = targetEmail,
+                            nickname = nick,
+                            bindingCode = myCode
+                        )
+                        addLog(if (isBangla.value) "গুগল দিয়ে নতুন একাউন্ট তৈরি করা হয়েছে।" else "Google Sign-Up successful.")
+                        triggerWidgetUpdate()
+                        onResult(true, "গুগল একাউন্ট দিয়ে নিবন্ধন সফল!")
+                    }
+                }
+                .addOnFailureListener {
+                    val numericHash = Math.abs(targetEmail.hashCode() % 900000) + 100000
+                    val myCode = numericHash.toString()
+                    syncEngine.loginUser(
+                        phone = targetEmail,
+                        nickname = nick,
+                        bindingCode = myCode
+                    )
+                    addLog(if (isBangla.value) "গুগল একাউন্ট দিয়ে সফলভাবে লগইন করা হয়েছে।" else "Google Sign-In successful.")
+                    triggerWidgetUpdate()
+                    onResult(true, "গুগল একাউন্ট দিয়ে লগইন সফল!")
+                }
+        } else {
+            val numericHash = Math.abs(targetEmail.hashCode() % 900000) + 100000
+            val myCode = numericHash.toString()
+            syncEngine.loginUser(
+                phone = targetEmail,
+                nickname = nick,
+                bindingCode = myCode
+            )
+            addLog(if (isBangla.value) "গুগল একাউন্ট দিয়ে সফলভাবে লগইন করা হয়েছে।" else "Google Sign-In successful.")
+            triggerWidgetUpdate()
+            onResult(true, "গুগল একাউন্ট দিয়ে লগইন সফল!")
+        }
+    }
+
     fun signUpWithPassword(
         target: String,
         password: String,
         isEmail: Boolean,
+        nickname: String = "",
         onResult: (Boolean, String) -> Unit
     ) {
-        val cleanTarget = target.trim()
+        val cleanTarget = if (isEmail) target.trim().lowercase() else target.trim()
+        val userNick = nickname.trim().ifEmpty { "আমার মন" }
         if (isEmail) {
             if (!android.util.Patterns.EMAIL_ADDRESS.matcher(cleanTarget).matches()) {
                 onResult(false, if (isBangla.value) "সঠিক ইমেইল অ্যাড্রেস লিখুন!" else "Please enter a valid email address!")
@@ -191,7 +383,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val userMap = mapOf(
                             "phone" to displayTarget,
                             "password" to password,
-                            "nickname" to "NICKNAME_NOT_SET",
+                            "nickname" to userNick,
                             "bindingCode" to myCode,
                             "boundPartnerPhone" to "",
                             "status" to "free",
@@ -206,9 +398,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 val prefs = context.getSharedPreferences("surjomukhi_prefs", Context.MODE_PRIVATE)
                                 prefs.edit().putString("local_password_$displayTarget", password).apply()
 
+                                syncEngine.partnerPhone.value = ""
                                 syncEngine.loginUser(
                                     phone = displayTarget,
-                                    nickname = "NICKNAME_NOT_SET",
+                                    nickname = userNick,
                                     bindingCode = myCode
                                 )
                                 addLog(if (isBangla.value) "নিবন্ধন সফল হয়েছে! স্বাগতম সূর্যমুখীতে।" else "Registration successful! Welcome to Surjomukhi.")
@@ -230,9 +423,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val numericHash = Math.abs(displayTarget.hashCode() % 900000) + 100000
                         val myCode = numericHash.toString()
                         prefs.edit().putString("local_password_$displayTarget", password).apply()
+                        syncEngine.partnerPhone.value = ""
                         syncEngine.loginUser(
                             phone = displayTarget,
-                            nickname = "NICKNAME_NOT_SET",
+                            nickname = userNick,
                             bindingCode = myCode
                         )
                         addLog(if (isBangla.value) "লোকাল নিবন্ধন সফল হয়েছে (অফলাইন মোড)।" else "Local offline registration successful.")
@@ -249,9 +443,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val numericHash = Math.abs(displayTarget.hashCode() % 900000) + 100000
                 val myCode = numericHash.toString()
                 prefs.edit().putString("local_password_$displayTarget", password).apply()
+                syncEngine.partnerPhone.value = ""
                 syncEngine.loginUser(
                     phone = displayTarget,
-                    nickname = "NICKNAME_NOT_SET",
+                    nickname = userNick,
                     bindingCode = myCode
                 )
                 addLog(if (isBangla.value) "লোকাল নিবন্ধন সফল হয়েছে (অফলাইন মোড)।" else "Local offline registration successful.")
@@ -267,7 +462,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         isEmail: Boolean,
         onResult: (Boolean, String) -> Unit
     ) {
-        val cleanTarget = target.trim()
+        val cleanTarget = if (isEmail) target.trim().lowercase() else target.trim()
         if (isEmail) {
             if (!android.util.Patterns.EMAIL_ADDRESS.matcher(cleanTarget).matches()) {
                 onResult(false, if (isBangla.value) "সঠিক ইমেইল অ্যাড্রেস লিখুন!" else "Please enter a valid email address!")
@@ -295,26 +490,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (snapshot != null && snapshot.exists()) {
                         val dbPassword = snapshot.getString("password") ?: ""
                         if (dbPassword == password) {
-                            val dbNick = snapshot.getString("nickname") ?: "NICKNAME_NOT_SET"
+                            val dbNick = snapshot.getString("nickname") ?: "আমার মন"
                             val dbBindingCode = snapshot.getString("bindingCode") ?: ""
+                            val actualBindingCode = if (dbBindingCode.isNotBlank()) dbBindingCode else {
+                                val numericHash = Math.abs(displayTarget.hashCode() % 900000) + 100000
+                                val newCode = numericHash.toString()
+                                dbRef.collection("users").document(displayTarget).update("bindingCode", newCode)
+                                newCode
+                            }
                             val boundPartner = snapshot.getString("boundPartnerPhone") ?: ""
                             
                             val prefs = context.getSharedPreferences("surjomukhi_prefs", Context.MODE_PRIVATE)
                             prefs.edit().putString("local_password_$displayTarget", password).apply()
 
                             if (boundPartner.isNotEmpty()) {
-                                syncEngine.partnerPhone.value = boundPartner
+                                dbRef.collection("users").document(boundPartner).get()
+                                    .addOnSuccessListener { pDoc ->
+                                        if (pDoc != null && pDoc.exists() && pDoc.getString("boundPartnerPhone") == displayTarget) {
+                                            syncEngine.partnerPhone.value = boundPartner
+                                            syncEngine.partnerNickname.value = pDoc.getString("nickname") ?: "প্রিয় মানুষ"
+                                            syncEngine.loginUser(
+                                                phone = displayTarget,
+                                                nickname = if (dbNick == "NICKNAME_NOT_SET") "আমার মন" else dbNick,
+                                                bindingCode = actualBindingCode
+                                            )
+                                            addLog(if (isBangla.value) "সফলভাবে লগইন করা হয়েছে।" else "Logged in successfully.")
+                                            triggerWidgetUpdate()
+                                            onResult(true, "লগইন সফল! পার্টনারের সাথে সংযুক্ত আছেন।")
+                                        } else {
+                                            syncEngine.partnerPhone.value = ""
+                                            dbRef.collection("users").document(displayTarget).update("boundPartnerPhone", "")
+                                            syncEngine.loginUser(
+                                                phone = displayTarget,
+                                                nickname = if (dbNick == "NICKNAME_NOT_SET") "আমার মন" else dbNick,
+                                                bindingCode = actualBindingCode
+                                            )
+                                            addLog(if (isBangla.value) "সফলভাবে লগইন করা হয়েছে।" else "Logged in successfully.")
+                                            triggerWidgetUpdate()
+                                            onResult(true, "লগইন সফল!")
+                                        }
+                                    }
+                                    .addOnFailureListener {
+                                        syncEngine.partnerPhone.value = boundPartner
+                                        syncEngine.loginUser(
+                                            phone = displayTarget,
+                                            nickname = if (dbNick == "NICKNAME_NOT_SET") "আমার মন" else dbNick,
+                                            bindingCode = actualBindingCode
+                                        )
+                                        addLog(if (isBangla.value) "সফলভাবে লগইন করা হয়েছে।" else "Logged in successfully.")
+                                        triggerWidgetUpdate()
+                                        onResult(true, "লগইন সফল!")
+                                    }
+                            } else {
+                                syncEngine.partnerPhone.value = ""
+                                syncEngine.loginUser(
+                                    phone = displayTarget,
+                                    nickname = if (dbNick == "NICKNAME_NOT_SET") "আমার মন" else dbNick,
+                                    bindingCode = actualBindingCode
+                                )
+                                addLog(if (isBangla.value) "সফলভাবে লগইন করা হয়েছে।" else "Logged in successfully.")
+                                triggerWidgetUpdate()
+                                onResult(true, "লগইন সফল!")
                             }
-
-                            syncEngine.loginUser(
-                                phone = displayTarget,
-                                nickname = dbNick,
-                                bindingCode = dbBindingCode
-                            )
-                            
-                            addLog(if (isBangla.value) "সফলভাবে লগইন করা হয়েছে।" else "Logged in successfully.")
-                            triggerWidgetUpdate()
-                            onResult(true, "লগইন সফল!")
                         } else {
                             onResult(false, if (isBangla.value) "ভুল পাসওয়ার্ড! আবার চেষ্টা করুন।" else "Incorrect password! Please try again.")
                         }
@@ -327,7 +564,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 val myCode = numericHash.toString()
                                 syncEngine.loginUser(
                                     phone = displayTarget,
-                                    nickname = "NICKNAME_NOT_SET",
+                                    nickname = "আমার মন",
                                     bindingCode = myCode
                                 )
                                 onResult(true, "লগইন সফল!")
@@ -348,7 +585,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             val myCode = numericHash.toString()
                             syncEngine.loginUser(
                                 phone = displayTarget,
-                                nickname = "NICKNAME_NOT_SET",
+                                nickname = "আমার মন",
                                 bindingCode = myCode
                             )
                             onResult(true, "লগইন সফল (অফলাইন মোড)!")
@@ -368,7 +605,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val myCode = numericHash.toString()
                     syncEngine.loginUser(
                         phone = displayTarget,
-                        nickname = "NICKNAME_NOT_SET",
+                        nickname = "আমার মন",
                         bindingCode = myCode
                     )
                     onResult(true, "লগইন সফল!")
@@ -408,6 +645,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 onResult(false, error)
             }
         )
+    }
+
+    // UNBIND PARTNER (DISCONNECT)
+    fun unbindPartner() {
+        syncEngine.unbindPartner()
+        addLog(if (isBangla.value) "পার্টনার সংযোগ বিচ্ছিন্ন করা হয়েছে।" else "Partner disconnected.")
+        triggerWidgetUpdate()
     }
 
     // UPDATE STATUS

@@ -88,12 +88,6 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
     val partnerChirkut by viewModel.partnerChirkut.collectAsState()
     val isChirkutEnabledSetting by viewModel.isChirkutEnabled.collectAsState()
 
-    // GitHub OTA update states
-    val gitHubRepo by viewModel.gitHubRepo.collectAsState()
-    val isCheckingGitHubUpdate by viewModel.isCheckingGitHubUpdate.collectAsState()
-    val isGitHubUpdateAvailable by viewModel.isGitHubUpdateAvailable.collectAsState()
-    val latestGitHubRelease by viewModel.latestGitHubRelease.collectAsState()
-    val gitHubStatusMessage by viewModel.gitHubStatusMessage.collectAsState()
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
 
     var showMuteSettings by remember { mutableStateOf(false) }
@@ -104,16 +98,9 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
     val myStatus = StatusType.fromKey(myStatusKey)
     val partnerStatus = StatusType.fromKey(partnerStatusKey)
 
-    // Form states for LOGIN & SIGNUP
-    var loginTabSelected by remember { mutableStateOf("phone") } // "phone" or "email"
+    // Screen Mode for LOGIN vs SIGNUP
     var isSignUpMode by remember { mutableStateOf(false) } // false = Login, true = Signup
-    var inputPhone by remember { mutableStateOf("") }
-    var inputPassword by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
     var notificationMessage by remember { mutableStateOf<String?>(null) }
-
-    // Form states for BINDING
-    var inputBindCode by remember { mutableStateOf("") }
 
     // Form states for SETTINGS
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -191,511 +178,135 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
             }
         }
 
-        // NAVIGATION CONTROLLER BY STATE
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(start = 16.dp, end = 16.dp, bottom = 24.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            Spacer(modifier = Modifier.statusBarsPadding())
+        // System Back gesture/button handling
+        androidx.activity.compose.BackHandler(enabled = isSignUpMode) {
+            isSignUpMode = false
+            notificationMessage = null
+        }
+        androidx.activity.compose.BackHandler(enabled = myPhone.isNotEmpty() && partnerPhone.isEmpty()) {
+            viewModel.logout()
+        }
+        androidx.activity.compose.BackHandler(enabled = showSettingsDialog) {
+            showSettingsDialog = false
+        }
+        androidx.activity.compose.BackHandler(enabled = showMuteSettings) {
+            showMuteSettings = false
+        }
+        androidx.activity.compose.BackHandler(enabled = showCustomTextDialog) {
+            showCustomTextDialog = false
+        }
 
-            // GITHUB OTA UPDATE BANNER (No USB required)
-            if (isGitHubUpdateAvailable && latestGitHubRelease != null) {
-                GitHubUpdateBanner(
-                    isBn = isBn,
-                    releaseInfo = latestGitHubRelease!!,
-                    onDownloadClick = { downloadUrl ->
-                        try {
-                            uriHandler.openUri(downloadUrl)
-                        } catch (e: Exception) {
-                            notificationMessage = if (isBn) "ব্রাউজার ওপেন করা সম্ভব হয়নি" else "Could not open browser link"
+        // NAVIGATION CONTROLLER BY STATE (GLASS UI MATCHING DESIGN)
+        if (myPhone.isEmpty()) {
+            if (!isSignUpMode) {
+                LoginScreen(
+                    onLoginClick = { target, password ->
+                        val cleanTarget = target.trim()
+                        if (cleanTarget.isBlank() || password.isBlank()) {
+                            notificationMessage = if (isBn) "ইমেইল/নম্বর ও পাসওয়ার্ড লিখুন!" else "Please enter email/phone and password!"
+                            return@LoginScreen
+                        }
+                        viewModel.loginWithPassword(
+                            target = cleanTarget,
+                            password = password,
+                            isEmail = cleanTarget.contains("@")
+                        ) { success, msg ->
+                            notificationMessage = if (success) (if (isBn) "লগইন সফল!" else "Logged in successfully!") else msg
                         }
                     },
-                    onViewRepoClick = { repoUrl ->
-                        try {
-                            uriHandler.openUri(repoUrl)
-                        } catch (e: Exception) {
-                            notificationMessage = if (isBn) "ব্রাউজার ওপেন করা সম্ভব হয়নি" else "Could not open browser link"
+                    onNavigateToSignUp = {
+                        isSignUpMode = true
+                        notificationMessage = null
+                    },
+                    onGoogleSignInClick = { googleEmail, googleName ->
+                        viewModel.signInWithGoogle(googleEmail, googleName) { success, msg ->
+                            notificationMessage = msg
+                        }
+                    }
+                )
+            } else {
+                SignUpScreen(
+                    onSignUpClick = { name, email, pass, confirmPass, termsAgreed ->
+                        val cleanEmail = email.trim()
+                        val cleanName = name.trim()
+                        if (cleanName.isBlank()) {
+                            notificationMessage = if (isBn) "আপনার নাম লিখুন!" else "Please enter your name!"
+                            return@SignUpScreen
+                        }
+                        if (cleanEmail.isBlank()) {
+                            notificationMessage = if (isBn) "ইমেইল লিখুন!" else "Please enter email!"
+                            return@SignUpScreen
+                        }
+                        if (pass.length < 4) {
+                            notificationMessage = if (isBn) "পাসওয়ার্ড অন্তত ৪ অক্ষরের হতে হবে!" else "Password must be at least 4 characters!"
+                            return@SignUpScreen
+                        }
+                        if (pass != confirmPass) {
+                            notificationMessage = if (isBn) "পাসওয়ার্ড দুটি মেলেনি!" else "Passwords do not match!"
+                            return@SignUpScreen
+                        }
+                        if (!termsAgreed) {
+                            notificationMessage = if (isBn) "শর্তাবলী ও নীতিমালায় সম্মত হতে হবে!" else "Please agree to terms and privacy policy!"
+                            return@SignUpScreen
+                        }
+
+                        viewModel.signUpWithPassword(
+                            target = cleanEmail,
+                            password = pass,
+                            isEmail = true,
+                            nickname = cleanName
+                        ) { success, msg ->
+                            if (success) {
+                                if (cleanName.isNotBlank()) {
+                                    viewModel.updateProfileNicknames(cleanName, "প্রিয় মানুষ")
+                                }
+                                notificationMessage = if (isBn) "নিবন্ধন সফল হয়েছে!" else "Registered successfully!"
+                            } else {
+                                notificationMessage = msg
+                            }
                         }
                     },
-                    onDismiss = {
-                        viewModel.dismissGitHubUpdate()
+                    onBackToLogin = {
+                        isSignUpMode = false
+                        notificationMessage = null
+                    },
+                    onGoogleSignUpClick = { googleEmail, googleName ->
+                        viewModel.signInWithGoogle(googleEmail, googleName) { success, msg ->
+                            notificationMessage = msg
+                        }
                     }
                 )
             }
-
-            // SCENARIO 1: USER IS NOT LOGGED IN yet (Phone login)
-            if (myPhone.isEmpty()) {
-                // Integrated Beautiful Top Bar (scrolls with page)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Favorite,
-                            contentDescription = "Flower logo",
-                            tint = Color(0xFFFFD700),
-                            modifier = Modifier
-                                .size(22.dp)
-                                .scale(pulseScale)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isBn) "সূর্যমুখী" else "Surjomukhi",
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Black
-                        )
+        } else if (partnerPhone.isEmpty()) {
+            BindingScreen(
+                myBindingCode = myBindingCode,
+                onBindClick = { code ->
+                    val cleanCode = code.trim()
+                    if (cleanCode.length != 6) {
+                        notificationMessage = if (isBn) "কোডটি অবশ্যই ৬ সংখ্যার হতে হবে!" else "Binding code must be 6 digits!"
+                        return@BindingScreen
                     }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF1E1E2C))
-                                .border(1.dp, Color(0xFF28283B), RoundedCornerShape(12.dp))
-                                .clickable { viewModel.toggleLanguage() }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = if (isBn) "English" else "বাংলা",
-                                color = Color(0xFFFFD700),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                              )
+                    viewModel.bindPartner(cleanCode) { success, errorMsg ->
+                        if (!success) {
+                            notificationMessage = errorMsg
+                        } else {
+                            notificationMessage = if (isBn) "সংযুক্ত হয়েছে!" else "Connected!"
                         }
                     }
+                },
+                onLogoutClick = {
+                    viewModel.logout()
                 }
-
-                Spacer(modifier = Modifier.height(4.dp))
-                
-                // Poetic Welcome Header (Live rotating sunflower logo & customizable quotes cycler)
-                PoeticWelcomeHeader(isBn = isBn, pulseScale = pulseScale, bobbingOffset = bobbingOffset)
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Credentials and Auth login box
-                Card(
-                    modifier = Modifier.fillMaxWidth().testTag("login_card"),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF111119)),
-                    shape = RoundedCornerShape(24.dp),
-                    border = BorderStroke(1.dp, Color(0xFF20202F))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = if (isSignUpMode) {
-                                if (isBn) "নতুন অ্যাকাউন্ট তৈরি করুন" else "Create New Account"
-                            } else {
-                                if (isBn) "ব্যক্তিগত সেশনে প্রবেশ করুন" else "Sign In Securely"
-                            },
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        Text(
-                            text = if (isSignUpMode) {
-                                if (isBn) "রিয়েল-টাইম উপস্থিতি এবং মৃদু ভাইব্রেশন স্পর্শের অভিজ্ঞতা নিতে নতুন অ্যাকাউন্ট খুলুন।" 
-                                else "Create a secure account to stream presence & gentle vibe touches."
-                            } else {
-                                if (isBn) "রিয়েল-টাইম উপস্থিতি এবং মৃদু ভাইব্রেশন স্পর্শের অভিজ্ঞতা নিতে লগইন করুন।" 
-                                else "Sign in securely via password to stream presence & gentle vibe touches."
-                            },
-                            color = Color.Gray,
-                            fontSize = 11.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-
-                        // Tab selector: Phone vs Email
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 14.dp)
-                                .height(38.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF070B12))
-                                .border(1.dp, Color(0xFF1E2F45), RoundedCornerShape(10.dp)),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .background(if (loginTabSelected == "phone") Color(0xFFFFD700).copy(alpha = 0.15f) else Color.Transparent)
-                                    .clickable { loginTabSelected = "phone" }
-                                    .testTag("phone_tab"),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (isBn) "মোবাইল নম্বর" else "Phone Number",
-                                    color = if (loginTabSelected == "phone") Color(0xFFFFD700) else Color.Gray,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .background(if (loginTabSelected == "email") Color(0xFFFFD700).copy(alpha = 0.15f) else Color.Transparent)
-                                    .clickable { loginTabSelected = "email" }
-                                    .testTag("email_tab"),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (isBn) "ইমেইল অ্যাড্রেস" else "Email Address",
-                                    color = if (loginTabSelected == "email") Color(0xFFFFD700) else Color.Gray,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        // Form Inputs
-                        OutlinedTextField(
-                            value = inputPhone,
-                            onValueChange = { inputPhone = it },
-                            label = { 
-                                Text(
-                                    if (loginTabSelected == "phone") {
-                                        if (isBn) "আপনার মোবাইল নম্বর" else "Your Phone Number"
-                                    } else {
-                                        if (isBn) "আপনার ইমেইল অ্যাড্রেস" else "Your Email Address"
-                                    }
-                                ) 
-                            },
-                            placeholder = { 
-                                Text(
-                                    if (loginTabSelected == "phone") "e.g. 017xxxxxxxx" else "e.g. mind@surjomukhi.com"
-                                ) 
-                            },
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = if (loginTabSelected == "phone") KeyboardType.Phone else KeyboardType.Email,
-                                imeAction = ImeAction.Next
-                            ),
-                            singleLine = true,
-                            leadingIcon = { 
-                                Icon(
-                                    imageVector = if (loginTabSelected == "phone") Icons.Default.Phone else Icons.Default.Email, 
-                                    contentDescription = "AuthIcon"
-                                ) 
-                            },
-                            modifier = Modifier.fillMaxWidth().testTag("auth_target_input"),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFFFFD700),
-                                unfocusedBorderColor = Color(0xFF28283B)
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Password Field
-                        OutlinedTextField(
-                            value = inputPassword,
-                            onValueChange = { inputPassword = it },
-                            label = { Text(if (isBn) "পাসওয়ার্ড" else "Password") },
-                            placeholder = { Text(if (isBn) "অন্তত ৪ অক্ষরের পাসওয়ার্ড" else "At least 4 characters") },
-                            singleLine = true,
-                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Password,
-                                imeAction = ImeAction.Done
-                            ),
-                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "PasswordIcon") },
-                            trailingIcon = {
-                                Text(
-                                    text = if (passwordVisible) (if (isBn) "লুকান" else "Hide") else (if (isBn) "দেখুন" else "Show"),
-                                    color = Color(0xFFFFD700),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier
-                                        .clickable { passwordVisible = !passwordVisible }
-                                        .padding(8.dp)
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth().testTag("password_input"),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFFFFD700),
-                                unfocusedBorderColor = Color(0xFF28283B)
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        // Action Button
-                        Button(
-                            onClick = {
-                                if (isSignUpMode) {
-                                    viewModel.signUpWithPassword(
-                                        target = inputPhone,
-                                        password = inputPassword,
-                                        isEmail = (loginTabSelected == "email")
-                                    ) { success, msg ->
-                                        if (success) {
-                                            notificationMessage = if (isBn) "নিবন্ধন সফল হয়েছে!" else "Registered Successfully!"
-                                        } else {
-                                            notificationMessage = msg
-                                        }
-                                    }
-                                } else {
-                                    viewModel.loginWithPassword(
-                                        target = inputPhone,
-                                        password = inputPassword,
-                                        isEmail = (loginTabSelected == "email")
-                                    ) { success, msg ->
-                                        if (success) {
-                                            notificationMessage = if (isBn) "লগইন সফল!" else "Logged In Successfully!"
-                                        } else {
-                                            notificationMessage = msg
-                                        }
-                                    }
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp)
-                                .testTag("auth_submit_button"),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isSignUpMode) Color(0xFF00FF88) else Color(0xFFFFD700),
-                                contentColor = Color.Black
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(
-                                text = if (isSignUpMode) {
-                                    if (isBn) "নিবন্ধন সম্পূর্ণ করুন ও প্রবেশ করুন ✨" else "Sign Up & Continue ✨"
-                                } else {
-                                    if (isBn) "প্রবেশ করুন 🔓" else "Sign In Securely 🔓"
-                                },
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Toggle Mode Button
-                        TextButton(
-                            onClick = {
-                                isSignUpMode = !isSignUpMode
-                                notificationMessage = null
-                            },
-                            modifier = Modifier.testTag("toggle_auth_mode_button")
-                        ) {
-                            Text(
-                                text = if (isSignUpMode) {
-                                    if (isBn) "ইতিমধ্যে অ্যাকাউন্ট আছে? লগইন করুন" else "Already have an account? Sign In"
-                                } else {
-                                    if (isBn) "নতুন অ্যাকাউন্ট তৈরি করতে চান? সাইন আপ করুন" else "Don't have an account? Sign Up"
-                                },
-                                color = Color(0xFFFFD700),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-            }
-
-            // SCENARIO 2: LOGGED IN, BUT NO PARTNER BOUND YET (Show pairing screen)
-            else if (partnerPhone.isEmpty()) {
-                // Integrated Beautiful Top Bar (scrolls with page)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Favorite,
-                            contentDescription = "Flower logo",
-                            tint = Color(0xFFFFD700),
-                            modifier = Modifier
-                                .size(22.dp)
-                                .scale(pulseScale)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isBn) "সূর্যমুখী" else "Surjomukhi",
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Black
-                        )
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF1E1E2C))
-                                .border(1.dp, Color(0xFF28283B), RoundedCornerShape(12.dp))
-                                .clickable { viewModel.toggleLanguage() }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = if (isBn) "English" else "বাংলা",
-                                color = Color(0xFFFFD700),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Poetic Welcome Header (Live rotating sunflower logo & customizable quotes cycler)
-                PoeticWelcomeHeader(isBn = isBn, pulseScale = pulseScale, bobbingOffset = bobbingOffset)
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF111119)),
-                    shape = RoundedCornerShape(24.dp),
-                    border = BorderStroke(1.dp, Color(0xFF28283B))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = if (isBn) "আত্মিক বন্ধন স্থাপন করুন" else "Establish Soul Bond",
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        Text(
-                            text = if (isBn) "লগইন সফল! এখন দুই হৃদস্পন্দন মেলাতে আপনার সঙ্গীর সাথে কোডটি আদান-প্রদান করুন।"
-                            else "Safe entry verified! Exchange 6-digit connection codes with your partner to merge live fields real-time.",
-                            color = Color.Gray,
-                            fontSize = 11.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-
-                        // Display My unique connection Code
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color(0xFF1B1B26))
-                                .border(1.dp, Color(0xFF3A3A4F), RoundedCornerShape(16.dp))
-                                .padding(horizontal = 16.dp, vertical = 10.dp)
-                                .fillMaxWidth(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text = if (isBn) "আপনার নিজের বন্ধন আইডি কোড" else "Your Connection ID Profile",
-                                    fontSize = 11.sp,
-                                    color = Color.Gray,
-                                    fontWeight = FontWeight.Bold
-                               )
-                                Text(
-                                    text = myBindingCode,
-                                    fontSize = 32.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color(0xFFFFD700),
-                                    style = MaterialTheme.typography.headlineLarge.copy(
-                                        shadow = Shadow(
-                                            color = Color(0xFFFFD700).copy(alpha = 0.4f),
-                                            offset = Offset(0f, 0f),
-                                            blurRadius = 14f
-                                        )
-                                    )
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Match Partner's Code
-                        OutlinedTextField(
-                            value = inputBindCode,
-                            onValueChange = { inputBindCode = it },
-                            label = { Text(if (isBn) "প্রিয় মানুষের বন্ধন কোড লিখুন" else "Enter Partner's Connection Code") },
-                            placeholder = { Text("e.g. 123456") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            leadingIcon = { Icon(Icons.Default.Favorite, contentDescription = "FavIcon", tint = Color.Red) },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFF00FF88),
-                                unfocusedBorderColor = Color(0xFF28283B)
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Button(
-                            onClick = {
-                                if (inputBindCode.length == 6) {
-                                    viewModel.bindPartner(inputBindCode) { success, errorMsg ->
-                                        if (!success) {
-                                            notificationMessage = errorMsg
-                                        }
-                                    }
-                                } else {
-                                    notificationMessage = if (isBn) "বন্ধন কোডটি অ অবশ্যই ৬ সংখ্যার হতে হবে!" else "Binding code must be 6 digits!"
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00FF88), contentColor = Color.Black),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(
-                                text = if (isBn) "সংযুক্ত করুন 🔗" else "Connect Partners 🔗",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        TextButton(
-                            onClick = { viewModel.logout() }
-                        ) {
-                            Text(
-                                text = if (isBn) "← লগআউট করুন (স্থানান্তর)" else "← Logout / Change User",
-                                color = Color.Gray,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
-            }
-
-            // SCENARIO 3: BOTH LOGGED IN AND SUCCESSFULLY MUTUALLY BOUND (The main exquisite screen!)
-            else {
+            )
+        } else {
+            // SCENARIO 3: BOTH LOGGED IN AND SUCCESSFULLY MUTUALLY BOUND
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 24.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Spacer(modifier = Modifier.statusBarsPadding())
                 Spacer(modifier = Modifier.height(4.dp))
 
                 // TOP BAR (with Title, Star, and Language Switcher)
@@ -1843,6 +1454,14 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
             }
         }
 
+        // Auto-dismiss floating notifications after 4 seconds
+        LaunchedEffect(notificationMessage) {
+            if (notificationMessage != null) {
+                delay(4000)
+                notificationMessage = null
+            }
+        }
+
         // FLOATING ACTION NOTIFICATION BAR (FOR TOAST MESSAGES)
         AnimatedVisibility(
             visible = notificationMessage != null,
@@ -2652,76 +2271,96 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
 
                                 Divider(color = Color(0xFF1E2F45), thickness = 0.5.dp, modifier = Modifier.padding(vertical = 10.dp))
 
-                                // SECTION 7: SURJOMUKHI UPDATE CENTER
+                                // SECTION 7: APP INFORMATION & STABILITY (CLEAN & SIMPLE)
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
                                     colors = CardDefaults.cardColors(containerColor = Color(0xFF0A121D)),
                                     shape = RoundedCornerShape(16.dp),
-                                    border = BorderStroke(1.dp, Color(0xFF1E3A5F))
+                                    border = BorderStroke(1.dp, Color(0xFF1E2F45))
                                 ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween,
-                                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("✨", fontSize = 16.sp)
-                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("🌻", fontSize = 16.sp)
+                                                Spacer(modifier = Modifier.width(8.dp))
                                                 Text(
-                                                    text = if (isBn) "সূর্যমুখী আপডেট সেন্টার" else "Surjomukhi Update Center",
-                                                    color = Color(0xFF60A5FA),
+                                                    text = if (isBn) "অ্যাপ সংস্করণ ও স্থিতি" else "App Version & Status",
+                                                    color = Color.White,
                                                     fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Bold
+                                                    fontWeight = FontWeight.SemiBold
                                                 )
                                             }
                                             Text(
                                                 text = "v${com.example.BuildConfig.VERSION_NAME}",
-                                                color = Color.Gray,
-                                                fontSize = 11.sp
-                                            )
-                                        }
-
-                                        Text(
-                                            text = if (isBn) "আপডেট সোর্স Channel: $gitHubRepo" else "Update Source: $gitHubRepo",
-                                            fontSize = 10.sp,
-                                            color = Color.Gray
-                                        )
-
-                                        if (!gitHubStatusMessage.isNullOrBlank()) {
-                                            Text(
-                                                text = gitHubStatusMessage!!,
-                                                fontSize = 11.sp,
-                                                color = if (isGitHubUpdateAvailable) Color(0xFF00FF88) else Color(0xFF94A3B8),
-                                                fontWeight = FontWeight.Medium,
-                                                modifier = Modifier.padding(vertical = 4.dp)
-                                            )
-                                        }
-
-                                        Button(
-                                            onClick = { viewModel.checkForGitHubUpdates() },
-                                            enabled = !isCheckingGitHubUpdate,
-                                            modifier = Modifier.fillMaxWidth().height(40.dp).padding(top = 4.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F), contentColor = Color(0xFF60A5FA)),
-                                            shape = RoundedCornerShape(10.dp),
-                                            contentPadding = PaddingValues(0.dp)
-                                        ) {
-                                            if (isCheckingGitHubUpdate) {
-                                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF60A5FA), strokeWidth = 2.dp)
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                            } else {
-                                                Text("🔄 ", fontSize = 13.sp)
-                                            }
-                                            Text(
-                                                text = if (isBn) "নতুন ভার্সন চেক করুন" else "Check for Updates",
+                                                color = Color(0xFFFFD700),
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color(0xFF131F2E), RoundedCornerShape(10.dp))
+                                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .background(Color(0xFF64748B), CircleShape)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = if (isBn) "অটো-আপডেট" else "Auto-Update",
+                                                    color = Color(0xFF94A3B8),
+                                                    fontSize = 11.sp
+                                                )
+                                            }
+                                            Text(
+                                                text = if (isBn) "বন্ধ রাখা হয়েছে (ক্লিন মোড)" else "Disabled (Clean Mode)",
+                                                color = Color(0xFFA0AEC0),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Medium
                                             )
                                         }
                                     }
                                 }
 
                                 Divider(color = Color(0xFF1E2F45), thickness = 0.5.dp, modifier = Modifier.padding(vertical = 10.dp))
+
+                                if (partnerPhone.isNotEmpty()) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            viewModel.unbindPartner()
+                                            showSettingsDialog = false
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(38.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            contentColor = Color(0xFFFFB74D)
+                                        ),
+                                        border = BorderStroke(1.dp, Color(0xFFFFB74D).copy(alpha = 0.5f)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isBn) "পার্টনার সংযোগ বিচ্ছিন্ন করুন (Unbind)" else "Unbind Partner",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
 
                                 Button(
                                     onClick = {
@@ -2823,119 +2462,6 @@ fun SurjomukhiDashboard(viewModel: MainViewModel) {
             containerColor = Color(0xFF1B1B26),
             shape = RoundedCornerShape(20.dp)
         )
-    }
-}
-
-@Composable
-fun GitHubUpdateBanner(
-    isBn: Boolean,
-    releaseInfo: GitHubReleaseInfo,
-    onDownloadClick: (String) -> Unit,
-    onViewRepoClick: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.5.dp, Color(0xFF00FF88))
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("✨", fontSize = 18.sp)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isBn) "সূর্যমুখী অ্যাপের নতুন ভার্সন এসেছে!" else "New Surjomukhi App Version Available!",
-                        color = Color(0xFF00FF88),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
-                }
-                Text(
-                    text = releaseInfo.tagName,
-                    color = Color.White,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 12.sp,
-                    modifier = Modifier
-                        .background(Color(0xFF00FF88).copy(alpha = 0.2f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = releaseInfo.releaseTitle.ifEmpty { if (isBn) "উন্নত অভিজ্ঞতা উপভোগ করতে অ্যাপটি আপডেট করে নিন" else "Update the app to enjoy improved experience and features" },
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            if (releaseInfo.body.isNotBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = releaseInfo.body,
-                    color = Color.LightGray,
-                    fontSize = 11.sp,
-                    maxLines = 3
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val apkUrl = releaseInfo.apkDownloadUrl ?: releaseInfo.htmlUrl
-                Button(
-                    onClick = { onDownloadClick(apkUrl) },
-                    modifier = Modifier.weight(1.2f).height(38.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00FF88), contentColor = Color.Black),
-                    shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text(
-                        text = if (isBn) "📥 এখনই আপডেট করুন" else "📥 Update Now",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Button(
-                    onClick = { onViewRepoClick(releaseInfo.htmlUrl) },
-                    modifier = Modifier.weight(1f).height(38.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B), contentColor = Color.White),
-                    shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text(
-                        text = if (isBn) "ℹ️ বিবরণ দেখুন" else "ℹ️ View Details",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Dismiss",
-                        tint = Color.Gray
-                    )
-                }
-            }
-        }
     }
 }
 

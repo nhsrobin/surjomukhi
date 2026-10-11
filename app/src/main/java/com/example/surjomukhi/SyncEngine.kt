@@ -259,21 +259,69 @@ class SyncEngine(private val context: Context) {
         myBindingCode.value = bindingCode
         saveLocalPreferences()
 
-        if (isFirestoreEnabled) {
-            // Push or fetch user profile on Firestore
-            val userMap = mapOf(
-                "phone" to phone,
-                "nickname" to myNickname.value,
-                "bindingCode" to bindingCode,
-                "boundPartnerPhone" to partnerPhone.value,
-                "status" to myStatus.value,
-                "customText" to myCustomText.value,
-                "updatedAt" to System.currentTimeMillis(),
-                "vibeMuteUntil" to myMuteUntil.value,
-                "vibeMuteMessage" to myMuteMessage.value
-            )
-            db?.collection("users")?.document(phone)?.set(userMap)
-            startSyncListeners()
+        if (isFirestoreEnabled && db != null) {
+            // Check existing profile in Firestore to preserve partner and status
+            db?.collection("users")?.document(phone)?.get()
+                ?.addOnSuccessListener { doc ->
+                    if (doc != null && doc.exists()) {
+                        val bound = doc.getString("boundPartnerPhone") ?: ""
+                        val dbNick = doc.getString("nickname") ?: myNickname.value
+                        val dbCode = doc.getString("bindingCode") ?: bindingCode
+                        if (dbNick.isNotBlank() && dbNick != "NICKNAME_NOT_SET") {
+                            myNickname.value = dbNick
+                        }
+                        if (dbCode.isNotBlank()) {
+                            myBindingCode.value = dbCode
+                        }
+
+                        if (bound.isNotEmpty()) {
+                            // Check partner document to verify mutual connection
+                            db?.collection("users")?.document(bound)?.get()
+                                ?.addOnSuccessListener { pDoc ->
+                                    if (pDoc != null && pDoc.exists() && pDoc.getString("boundPartnerPhone") == phone) {
+                                        // Mutual active connection!
+                                        partnerPhone.value = bound
+                                        partnerNickname.value = pDoc.getString("nickname") ?: "প্রিয় মানুষ"
+                                        saveLocalPreferences()
+                                        startSyncListeners()
+                                    } else {
+                                        // Stale partner link or unbonded by partner
+                                        partnerPhone.value = ""
+                                        db?.collection("users")?.document(phone)?.update("boundPartnerPhone", "")
+                                        saveLocalPreferences()
+                                        startSyncListeners()
+                                    }
+                                }
+                                ?.addOnFailureListener {
+                                    partnerPhone.value = bound
+                                    saveLocalPreferences()
+                                    startSyncListeners()
+                                }
+                        } else {
+                            partnerPhone.value = ""
+                            saveLocalPreferences()
+                            startSyncListeners()
+                        }
+                    } else {
+                        // Create initial profile in Firestore
+                        val userMap = mapOf(
+                            "phone" to phone,
+                            "nickname" to myNickname.value,
+                            "bindingCode" to bindingCode,
+                            "boundPartnerPhone" to "",
+                            "status" to myStatus.value,
+                            "customText" to myCustomText.value,
+                            "updatedAt" to System.currentTimeMillis(),
+                            "vibeMuteUntil" to myMuteUntil.value,
+                            "vibeMuteMessage" to myMuteMessage.value
+                        )
+                        db?.collection("users")?.document(phone)?.set(userMap)
+                        startSyncListeners()
+                    }
+                }
+                ?.addOnFailureListener {
+                    startSyncListeners()
+                }
         }
     }
 
@@ -392,42 +440,76 @@ class SyncEngine(private val context: Context) {
             return
         }
 
-        if (isFirestoreEnabled) {
-            db?.collection("users")?.whereEqualTo("bindingCode", cleanCode)?.get()
-                ?.addOnSuccessListener { querySnapshot ->
-                    if (querySnapshot == null || querySnapshot.isEmpty) {
-                        onFailure("ভুল কোড! কোনো পার্টনার খুঁজে পাওয়া যায়নি")
+        // Rule: A user can only be connected to 1 partner at a time
+        if (partnerPhone.value.isNotEmpty()) {
+            onFailure("আপনি ইতিমধ্যে একজন পার্টনারের সাথে সংযুক্ত আছেন! নতুন সংযোগ করার আগে পূর্বের সংযোগ বিচ্ছিন্ন (Unbind) করুন।")
+            return
+        }
+
+        if (isFirestoreEnabled && db != null) {
+            // First check my own Firestore record to verify I don't already have a partner
+            db?.collection("users")?.document(myPhone.value)?.get()
+                ?.addOnSuccessListener { myDoc ->
+                    val myBound = myDoc?.getString("boundPartnerPhone") ?: ""
+                    if (myBound.isNotEmpty()) {
+                        partnerPhone.value = myBound
+                        saveLocalPreferences()
+                        onFailure("আপনি ইতিমধ্যে অন্য একজন পার্টনারের সাথে সংযুক্ত আছেন! পূর্বের সংযোগ বিচ্ছিন্ন করুন।")
                         return@addOnSuccessListener
                     }
-                    val partnerDoc = querySnapshot.documents[0]
-                    val pPhone = partnerDoc.getString("phone") ?: ""
-                    
-                    if (pPhone == myPhone.value) {
-                        onFailure("আপনি নিজের কোডে বাইন্ড করতে পারবেন না!")
-                        return@addOnSuccessListener
-                    }
 
-                    // Perform mutual binding transaction
-                    partnerPhone.value = pPhone
-                    partnerNickname.value = partnerDoc.getString("nickname") ?: "কল্পনা"
-                    saveLocalPreferences()
+                    // Look up target partner by binding code
+                    db?.collection("users")?.whereEqualTo("bindingCode", cleanCode)?.get()
+                        ?.addOnSuccessListener { querySnapshot ->
+                            if (querySnapshot == null || querySnapshot.isEmpty) {
+                                onFailure("ভুল কোড! কোনো পার্টনার খুঁজে পাওয়া যায়নি")
+                                return@addOnSuccessListener
+                            }
+                            val partnerDoc = querySnapshot.documents[0]
+                            val pPhone = partnerDoc.getString("phone")?.ifEmpty { partnerDoc.id } ?: partnerDoc.id
+                            
+                            if (pPhone == myPhone.value) {
+                                onFailure("আপনি নিজের কোডে বাইন্ড করতে পারবেন না!")
+                                return@addOnSuccessListener
+                            }
 
-                    // Update my Firestore document
-                    db?.collection("users")?.document(myPhone.value)
-                        ?.update("boundPartnerPhone", pPhone)
+                            // Rule: If partner is already connected with someone else, reject
+                            val targetBound = partnerDoc.getString("boundPartnerPhone") ?: ""
+                            if (targetBound.isNotEmpty() && targetBound != myPhone.value) {
+                                onFailure("এই পার্টনার ইতোমধ্যে অন্য কারও সাথে সংযুক্ত আছেন! একসাথে কেবল একজনের সাথেই সংযুক্ত থাকা সম্ভব।")
+                                return@addOnSuccessListener
+                            }
 
-                    // Update partner's Firestore document
-                    db?.collection("users")?.document(pPhone)
-                        ?.update("boundPartnerPhone", myPhone.value)
+                            // Perform mutual binding in Firestore
+                            partnerPhone.value = pPhone
+                            val partnerNick = partnerDoc.getString("nickname") ?: "প্রিয় মানুষ"
+                            partnerNickname.value = if (partnerNick == "NICKNAME_NOT_SET") "প্রিয় মানুষ" else partnerNick
+                            saveLocalPreferences()
 
-                    startSyncListeners()
-                    onSuccess()
+                            // Update my Firestore document
+                            db?.collection("users")?.document(myPhone.value)
+                                ?.update("boundPartnerPhone", pPhone)
+
+                            // Update partner's Firestore document
+                            db?.collection("users")?.document(pPhone)
+                                ?.update("boundPartnerPhone", myPhone.value)
+
+                            startSyncListeners()
+                            onSuccess()
+                        }
+                        ?.addOnFailureListener { e ->
+                            onFailure("সার্ভার ত্রুটি: ${e.localizedMessage}")
+                        }
                 }
                 ?.addOnFailureListener { e ->
-                    onFailure("সার্ভার সমস্যা: ${e.localizedMessage}")
+                    onFailure("সার্ভার ত্রুটি: ${e.localizedMessage}")
                 }
         } else {
-            onFailure("সার্ভার সংযোগ ব্যর্থ হয়েছে। অনুগ্রহ করে ইন্টারনেট সংযোগ চেক করুন এবং পুনরায় চেষ্টা করুন।")
+            // Offline/Local fallback
+            partnerPhone.value = "partner_$cleanCode"
+            partnerNickname.value = "প্রিয় মানুষ"
+            saveLocalPreferences()
+            onSuccess()
         }
     }
 
@@ -642,10 +724,49 @@ class SyncEngine(private val context: Context) {
         }
     }
 
+    fun unbindPartner() {
+        val currentPartner = partnerPhone.value
+        val me = myPhone.value
+        if (isFirestoreEnabled) {
+            if (me.isNotEmpty()) {
+                db?.collection("users")?.document(me)?.update("boundPartnerPhone", "")
+            }
+            if (currentPartner.isNotEmpty()) {
+                db?.collection("users")?.document(currentPartner)?.update("boundPartnerPhone", "")
+            }
+        }
+        partnerPhone.value = ""
+        partnerNickname.value = "কল্পনা"
+        partnerStatus.value = "free"
+        partnerCustomText.value = ""
+        partnerChirkut.value = ""
+        saveLocalPreferences()
+        startSyncListeners()
+    }
+
     fun logout() {
         shutdownListeners()
         val prefs = context.getSharedPreferences("surjomukhi_prefs", Context.MODE_PRIVATE)
-        prefs.edit().clear().apply()
+        prefs.edit()
+            .remove("my_phone")
+            .remove("my_nickname")
+            .remove("my_binding_code")
+            .remove("partner_phone")
+            .remove("partner_nickname")
+            .remove("my_status")
+            .remove("my_custom_text")
+            .remove("partner_status")
+            .remove("partner_custom_text")
+            .remove("my_mute_until")
+            .remove("my_mute_message")
+            .remove("partner_mute_until")
+            .remove("partner_mute_message")
+            .remove("auto_mute_until")
+            .remove("consecutive_vibes_sent")
+            .remove("partner_last_known_updated_at")
+            .remove("my_chirkut")
+            .remove("partner_chirkut")
+            .apply()
         
         myPhone.value = ""
         myNickname.value = "আমার মন"
@@ -656,6 +777,8 @@ class SyncEngine(private val context: Context) {
         myCustomText.value = ""
         partnerStatus.value = "free"
         partnerCustomText.value = ""
+        myChirkut.value = ""
+        partnerChirkut.value = ""
     }
 
     fun shutdownListeners() {

@@ -41,6 +41,20 @@ class GitHubUpdateManager(private val context: Context) {
         prefs.getString("github_repo_slug", "nhsrobin/surjomukhi") ?: "nhsrobin/surjomukhi"
     )
 
+    // Auto Update setting (Disabled by default: clean & simple, zero glitch)
+    val isAutoUpdateEnabled = MutableStateFlow(
+        prefs.getBoolean("is_auto_update_enabled", false)
+    )
+
+    fun setAutoUpdateEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("is_auto_update_enabled", enabled).apply()
+        isAutoUpdateEnabled.value = enabled
+        if (!enabled) {
+            _isUpdateAvailable.value = false
+            _statusMessage.value = "অটো-আপডেট বন্ধ রাখা হয়েছে"
+        }
+    }
+
     // Update Status States
     private val _isChecking = MutableStateFlow(false)
     val isChecking: StateFlow<Boolean> = _isChecking.asStateFlow()
@@ -187,6 +201,10 @@ class GitHubUpdateManager(private val context: Context) {
     }
 
     private fun showSystemNotification(title: String, message: String, apkUrl: String) {
+        if (!isAutoUpdateEnabled.value) {
+            // Keep background notifications disabled for clean experience
+            return
+        }
         try {
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
                 ?: return
